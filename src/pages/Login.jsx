@@ -4,7 +4,7 @@ import { useAuth, useApi } from '../services/api.jsx'
 import { useNavigate } from 'react-router-dom'
 
 export default function Login(){
-  const { login } = useAuth()
+  const { login, token } = useAuth()
   const api = useApi()
   const nav = useNavigate()
   const [email, setEmail] = useState('admin@example.com')
@@ -18,22 +18,10 @@ export default function Login(){
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
   }, [dark])
 
-  // Prefetch do bundle e também de dados iniciais para entrada instantânea
+  // Prefetch do bundle; dados só após autenticação
   useEffect(()=>{
     void import('./Movimentacao.jsx')
-    // Inicia um prefetch leve de dados para primeira página
-    const controller = new AbortController()
-    const run = async ()=>{
-      try {
-        // Snapshot via sessão será usado pela Movimentação
-        await Promise.all([
-          api.listContacts?.(1, 50, { q: '', status: '' }),
-          api.listContactsStats?.()
-        ])
-      } catch { /* ignora em tela de login */ }
-    }
-    run()
-    return ()=> controller.abort()
+    // Não buscar dados protegidos sem token para evitar 401/CORS
   }, [])
 
   async function submit(e){

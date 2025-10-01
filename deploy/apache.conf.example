@@ -21,10 +21,13 @@
     <IfModule mod_rewrite.c>
         RewriteEngine On
         RewriteBase /
+        # Não reescreva caminhos da API; deixe o ProxyPass tratar
+        # Reescrita para SPA (fallback para index.html) – NÃO reescrever /api/
+        RewriteCond %{REQUEST_URI} !^/api/ [NC]
         RewriteRule ^index\.html$ - [L]
-        RewriteCond %{REQUEST_FILENAME} -f [OR]
-        RewriteCond %{REQUEST_FILENAME} -d
-        RewriteRule ^ - [L]
+        # Se não for arquivo nem diretório, redireciona para index.html
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
         RewriteRule . /index.html [L]
     </IfModule>
 
@@ -40,8 +43,9 @@
 
     # Proxy reverso para a API (evita CORS). Requer: a2enmod proxy proxy_http
     ProxyPreserveHost On
-    ProxyPass        /api http://89.117.58.152:8080/api
-    ProxyPassReverse /api http://89.117.58.152:8080/api
+    # Use SEMPRE barra no final em ambos os lados para preservar o path corretamente
+    ProxyPass        /api/ http://127.0.0.1:8080/api/
+    ProxyPassReverse /api/ http://127.0.0.1:8080/api/
 
     ErrorLog ${APACHE_LOG_DIR}/solonline-frontend_error.log
     CustomLog ${APACHE_LOG_DIR}/solonline-frontend_access.log combined
