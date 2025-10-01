@@ -1,0 +1,48 @@
+# Exemplo de VirtualHost Apache para servir SPA (Vite/React) na porta 8081
+
+# Garanta em /etc/apache2/ports.conf:
+#   Listen 8081
+
+<VirtualHost *:8081>
+    ServerName _
+
+    # Ajuste o caminho abaixo para onde o build (dist) foi publicado
+    DocumentRoot /var/www/solonline-front/dist
+    DirectoryIndex index.html
+
+    # Sem .htaccess: todas as regras no VirtualHost (melhor performance)
+    <Directory /var/www/solonline-front/dist>
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    # Fallback SPA: qualquer rota deve servir index.html quando não for arquivo físico
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} -f [OR]
+        RewriteCond %{REQUEST_FILENAME} -d
+        RewriteRule ^ - [L]
+        RewriteRule . /index.html [L]
+    </IfModule>
+
+    # Cache simples para assets estáticos
+    <IfModule mod_expires.c>
+        ExpiresActive On
+        ExpiresByType text/css "access plus 7 days"
+        ExpiresByType application/javascript "access plus 7 days"
+        ExpiresByType image/png "access plus 7 days"
+        ExpiresByType image/jpeg "access plus 7 days"
+        ExpiresByType image/svg+xml "access plus 7 days"
+    </IfModule>
+
+    # Proxy reverso para a API (evita CORS). Requer: a2enmod proxy proxy_http
+    ProxyPreserveHost On
+    ProxyPass        /api http://89.117.58.152:8080/api
+    ProxyPassReverse /api http://89.117.58.152:8080/api
+
+    ErrorLog ${APACHE_LOG_DIR}/solonline-frontend_error.log
+    CustomLog ${APACHE_LOG_DIR}/solonline-frontend_access.log combined
+</VirtualHost>

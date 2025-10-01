@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "cp -a public/. dist/",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {
