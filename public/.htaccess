@@ -1,0 +1,21 @@
+## .htaccess para SPA React (Vite)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  # Não reescrever se for arquivo ou diretório existente
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+  # Fallback SPA
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Cache simples para assets comuns
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 7 days"
+  ExpiresByType application/javascript "access plus 7 days"
+  ExpiresByType image/png "access plus 7 days"
+  ExpiresByType image/jpeg "access plus 7 days"
+  ExpiresByType image/svg+xml "access plus 7 days"
+</IfModule>
