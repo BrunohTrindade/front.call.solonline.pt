@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "postbuild": "cp -a public/. dist/",
+  "postbuild": "cp -a public/. dist/ && node ./scripts/replace-index-placeholders.mjs",
     "preview": "vite preview --port 5173"
   },
   "dependencies": {

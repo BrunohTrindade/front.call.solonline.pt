@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sistema - Agência SolOnline</title>
     <link rel="icon" type="image/png" href="/src/imagens/LOGO_Sol_Online.png" />
-    <!-- Performance hints: preconnect/dns-prefetch para API e preload do bundle -->
-    <link rel="preconnect" href="http://127.0.0.1:8000" crossorigin>
-    <link rel="dns-prefetch" href="http://127.0.0.1:8000">
+    <!-- Performance hints: preconnect/dns-prefetch para a origem da API em produção -->
+    <!-- Use VITE_API_ORIGIN (sem caminho /api) para evitar hardcode local -->
+    <link rel="preconnect" href="%VITE_API_ORIGIN%" crossorigin>
+    <link rel="dns-prefetch" href="%VITE_API_ORIGIN%">
     <link rel="preload" as="script" href="/src/main.jsx" />
   </head>
   <body>

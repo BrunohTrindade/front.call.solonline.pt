@@ -135,6 +135,64 @@ Este projeto utiliza Vite + React + Tailwind.
 - Qualquer mudança no `.env` requer novo build e republicação do `dist`.
 - Com origin único (frontend+API em 8081), você evita CORS e simplifica a configuração.
 
+## CI/CD automático (GitHub Actions)
+
+Este repositório inclui um workflow em `.github/workflows/deploy.yml` que:
+- roda a cada push na `main` (ou manualmente via `workflow_dispatch`)
+- instala dependências, faz `npm run build`
+- publica `dist/` no servidor VPS via `rsync` sobre SSH
+- (opcional) recarrega o Apache
+
+Configure no GitHub (Settings → Secrets and variables):
+- Secrets
+   - `SSH_PRIVATE_KEY`: chave privada com acesso ao VPS (use uma chave sem senha ou configure `ssh-agent` no servidor).
+   - `SSH_HOST`: IP do VPS (ex.: `89.117.58.152`).
+   - `SSH_USER`: usuário SSH (ex.: `ubuntu` ou `root`).
+   - `SSH_PORT` (opcional): porta SSH (padrão `22`).
+   - `REMOTE_PATH` (opcional): caminho remoto do `dist` (padrão `/var/www/solonline-front/dist`).
+   - `ENABLE_APACHE_RELOAD` (opcional): `true` para recarregar o Apache após deploy.
+- Variables (Repository variables)
+   - `VITE_PUBLIC_URL`: `http://89.117.58.152:8081`
+   - `VITE_API_BASE`: `http://89.117.58.152:8081/api`
+   - `VITE_API_ORIGIN`: `http://89.117.58.152:8081`
+
+Após configurar, qualquer commit na `main` dispara o build e deploy automaticamente para seu VPS.
+
+### Troubleshooting: 405 Method Not Allowed no /api/login
+
+Se aparecer erro 405 para `/api/login`, siga estes passos:
+
+1) Verifique o método e URL no navegador (DevTools → Network):
+   - Deve ser `POST http://SEU_IP:8081/api/login` com `Content-Type: application/json`.
+   - Se estiver indo para `8080` direto (sem proxy), refaça o build com `VITE_API_BASE=http://SEU_IP:8081/api` e mantenha o proxy no Apache.
+
+2) Valide o proxy do Apache (no servidor do front):
+   ```bash
+   curl -i http://127.0.0.1:8081/api/login -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"test@example.com","password":"123"}'
+   ```
+   - Se retornar 405 aqui, o problema está no roteamento/proxy ou no backend.
+
+3) Valide o backend diretamente (no servidor da API, porta 8080):
+   ```bash
+   curl -i http://127.0.0.1:8080/api/login -X POST \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"test@example.com","password":"123"}'
+   ```
+   - Se também retornar 405, a rota POST `/api/login` pode não estar registrada ou o servidor 8080 não está roteando para o framework (ex.: Laravel sem rewrite para `public/index.php`).
+
+4) Ajuste o ProxyPass/ProxyPassReverse com barras finais no `VirtualHost` (já no exemplo):
+   ```apache
+   ProxyPass        /api/ http://SEU_IP:8080/api/
+   ProxyPassReverse /api/ http://SEU_IP:8080/api/
+   ```
+   - Após mudar, rode: `sudo systemctl reload apache2`.
+
+5) Backend Laravel (exemplo):
+   - Certifique-se de que o `DocumentRoot` aponta para `.../public` e que o rewrite para `index.php` está ativo (mod_rewrite habilitado).
+   - A rota `POST /api/login` deve existir em `routes/api.php`.
+
 ## Por que ocorreu o erro 404 no /login?
 
 - O erro que você viu mostra cabeçalho "Servidor Apache/2.4.41", indicando que quem respondeu foi o Apache na porta 8081, não o Nginx.
