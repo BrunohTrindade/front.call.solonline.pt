@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ponte entre Tailwind e seu tema atual: 
+   mantenho seu theme.css com variáveis e componentes custom.
+   O Tailwind entra com utilitários, sem brigar com o tema existente. */
