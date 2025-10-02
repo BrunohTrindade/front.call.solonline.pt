@@ -78,10 +78,11 @@ export function ApiProvider({ children }) {
     }
   }
 
-  async function fetchJson(url, { method='GET', headers={}, body, signal } = {}) {
+  async function fetchJson(url, opts = {}) {
+    const { method='GET', headers={}, body, signal, ...rest } = opts || {}
     const hdrs = { Accept: 'application/json', ...headers }
     if (token) hdrs['Authorization'] = `Bearer ${token}`
-    const res = await fetch(url, { method, headers: hdrs, body, signal })
+    const res = await fetch(url, { method, headers: hdrs, body, signal, ...rest })
     if (res.status === 401 || res.status === 419) {
       handleUnauthorized()
       throw new Error('Não autorizado')
