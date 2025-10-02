@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sistema - Agência SolOnline</title>
     <link rel="icon" type="image/png" href="/src/imagens/LOGO_Sol_Online.png" />
-    <!-- Performance hints: preconnect/dns-prefetch para a origem da API em produção -->
-    <!-- Use VITE_API_ORIGIN (sem caminho /api) para evitar hardcode local -->
-    <link rel="preconnect" href="%VITE_API_ORIGIN%" crossorigin>
-    <link rel="dns-prefetch" href="%VITE_API_ORIGIN%">
+    <!-- API_ORIGIN_LINKS: o script de pós-build injeta preconnect/dns-prefetch aqui se VITE_API_ORIGIN estiver definida -->
+    <!-- API_ORIGIN_LINKS -->
     <link rel="preload" as="script" href="/src/main.jsx" />
   </head>
   <body>

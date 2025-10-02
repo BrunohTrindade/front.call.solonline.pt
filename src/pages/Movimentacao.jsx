@@ -680,6 +680,7 @@ export default function Movimentacao(){
                   variant="outlined"
                   onClick={()=> setPage(p => (p > 1 ? p - 1 : p))}
                   aria-disabled={(data.meta?.current_page || page) <= 1}
+                  disabled={(data.meta?.current_page || page) <= 1}
                   sx={(t)=> ({ borderRadius: 1.5, minWidth: 36, fontWeight: 800, borderColor: t.palette.divider, color: t.palette.text.primary })}
                 >Anterior</Button>
                 {Array.from({ length: data.meta?.last_page || 1 }, (_, i) => i + 1).map(n => (
@@ -687,6 +688,7 @@ export default function Movimentacao(){
                     key={n}
                     size="small"
                     variant={(data.meta?.current_page || page) === n ? 'contained' : 'outlined'}
+                    aria-current={(data.meta?.current_page || page) === n ? 'page' : undefined}
                     onClick={()=> setPage(n)}
                     sx={(t)=>(
                       (data.meta?.current_page || page) === n
@@ -700,6 +702,7 @@ export default function Movimentacao(){
                   variant="outlined"
                   onClick={()=> setPage(p => (p < (data.meta?.last_page || 1) ? p + 1 : p))}
                   aria-disabled={(data.meta?.current_page || page) >= (data.meta?.last_page || 1)}
+                  disabled={(data.meta?.current_page || page) >= (data.meta?.last_page || 1)}
                   sx={(t)=> ({ borderRadius: 1.5, minWidth: 36, fontWeight: 800, borderColor: t.palette.divider, color: t.palette.text.primary })}
                 >Próxima</Button>
               </Box>

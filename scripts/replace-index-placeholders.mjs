@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
@@ -14,18 +15,20 @@ try {
   process.exit(0)
 }
 
-const envOrigin = process.env.VITE_API_ORIGIN?.trim()
-let origin = envOrigin
-if (!origin) {
-  const base = process.env.VITE_API_BASE?.trim()
-  try { origin = base ? new URL(base).origin : '' } catch { origin = '' }
+const envOrigin = (process.env.VITE_API_ORIGIN || '').trim()
+let origin = ''
+try {
+  origin = envOrigin || (process.env.VITE_API_BASE ? new URL(process.env.VITE_API_BASE).origin : '')
+} catch {
+  origin = ''
 }
 
+// Injeta links na âncora API_ORIGIN_LINKS
 if (origin) {
-  html = html.replaceAll('%VITE_API_ORIGIN%', origin)
+  const inject = `\n    <link rel="preconnect" href="${origin}" crossorigin>\n    <link rel="dns-prefetch" href="${origin}">\n`
+  html = html.replace('<!-- API_ORIGIN_LINKS -->', `<!-- API_ORIGIN_LINKS -->${inject}`)
 } else {
-  // Remove as linhas de preconnect/dns-prefetch se não houver origem definida
-  html = html.replace(/\n?\s*<link[^>]+%VITE_API_ORIGIN%[^>]*>\s*/g, '')
+  // Nada a injetar; mantém o comentário como âncora
 }
 
 writeFileSync(distIndex, html, 'utf8')
