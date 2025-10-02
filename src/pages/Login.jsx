@@ -7,8 +7,8 @@ export default function Login(){
   const { login, token } = useAuth()
   const api = useApi()
   const nav = useNavigate()
-  const [email, setEmail] = useState('admin@example.com')
-  const [password, setPassword] = useState('admin123')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -22,6 +22,13 @@ export default function Login(){
   useEffect(()=>{
     void import('./Movimentacao.jsx')
     // Não buscar dados protegidos sem token para evitar 401/CORS
+  }, [])
+
+  // Garante que os campos fiquem vazios ao entrar no login (mitiga autofill)
+  useEffect(()=>{
+    // pequena defasagem ajuda a sobrepor eventuais autofills do navegador
+    const t = setTimeout(()=>{ setEmail(''); setPassword('') }, 0)
+    return ()=> clearTimeout(t)
   }, [])
 
   async function submit(e){
@@ -46,23 +53,23 @@ export default function Login(){
           </div>
         </div>
       </div>
-      <form onSubmit={submit} className="card login-card space-y-4">
+  <form onSubmit={submit} className="card login-card space-y-4" autoComplete="off">
         <div style={{textAlign:'center'}}>
           <img src={Logo} alt="Sol Online" style={{height:56, width:'auto'}} />
         </div>
         <div>
           <h2 className="card-title" style={{textAlign:'center', fontSize:32}}>Acesse sua conta</h2>
-          <div className="muted" style={{textAlign:'center'}}>login do administrador</div>
+          <div className="muted" style={{textAlign:'center'}}>&nbsp;</div>
         </div>
         {err && <div style={{color:'var(--danger)', textAlign:'center'}}>{err}</div>}
         <div>
           <label className="label">Email *</label>
-          <input className="input" value={email} onChange={e=>setEmail(e.target.value)} type="email" required />
+          <input className="input" name="login_email" autoComplete="off" value={email} onChange={e=>setEmail(e.target.value)} type="email" required />
         </div>
         <div>
           <label className="label">Senha *</label>
           <div className="input-wrap">
-            <input className="input suffix-pad" value={password} onChange={e=>setPassword(e.target.value)} type={showPwd?'text':'password'} required />
+            <input className="input suffix-pad" name="login_password" autoComplete="off" value={password} onChange={e=>setPassword(e.target.value)} type={showPwd?'text':'password'} required />
             <button type="button" className="input-icon-btn" onClick={()=>setShowPwd(v=>!v)} title={showPwd?'Ocultar':'Mostrar'}>👁️</button>
           </div>
           <div className="mt-2"><a className="link" href="#">Esqueceu sua senha?</a></div>
