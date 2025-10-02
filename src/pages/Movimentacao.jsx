@@ -115,14 +115,24 @@ export default function Movimentacao(){
     }
   }, [user?.is_admin, showOnly, filterAnchor])
 
+  // Computa lastPage com fallback por total/perPage quando meta não informar
+  const lastPage = useMemo(()=>{
+    const metaLast = Number(data?.meta?.last_page) || 1
+    const metaPer = Number(data?.meta?.per_page) || perPage
+    const metaTotal = Number(data?.meta?.total) || 0
+    const fromMeta = Math.max(1, metaLast)
+    const fromStats = metaPer > 0 ? Math.max(1, Math.ceil((stats?.total || 0) / metaPer)) : 1
+    // usa o maior estimado entre meta e stats, evitando ficar preso em 1
+    return Math.max(fromMeta, fromStats)
+  }, [data?.meta?.last_page, data?.meta?.per_page, data?.meta?.total, perPage, stats?.total])
+
   // Prefetch da próxima página para navegação instantânea
   useEffect(()=>{
     const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
-    const lastPage = data?.meta?.last_page || 1
     if (page < lastPage) {
       listContacts(page + 1, perPage, { q: query, status: statusParam }).catch(()=>{})
     }
-  }, [page, perPage, data?.meta?.last_page, query, showOnly])
+  }, [page, perPage, lastPage, query, showOnly])
 
   // Calcula a altura máxima da lista para caber 9 itens visíveis (scroll a partir do 10º)
   useEffect(()=>{
@@ -683,7 +693,7 @@ export default function Movimentacao(){
                   disabled={(data.meta?.current_page || page) <= 1}
                   sx={(t)=> ({ borderRadius: 1.5, minWidth: 36, fontWeight: 800, borderColor: t.palette.divider, color: t.palette.text.primary })}
                 >Anterior</Button>
-                {Array.from({ length: data.meta?.last_page || 1 }, (_, i) => i + 1).map(n => (
+                {Array.from({ length: lastPage || 1 }, (_, i) => i + 1).map(n => (
                   <Button
                     key={n}
                     size="small"
@@ -700,9 +710,9 @@ export default function Movimentacao(){
                 <Button
                   size="small"
                   variant="outlined"
-                  onClick={()=> setPage(p => (p < (data.meta?.last_page || 1) ? p + 1 : p))}
-                  aria-disabled={(data.meta?.current_page || page) >= (data.meta?.last_page || 1)}
-                  disabled={(data.meta?.current_page || page) >= (data.meta?.last_page || 1)}
+                  onClick={()=> setPage(p => (p < (lastPage || 1) ? p + 1 : p))}
+                  aria-disabled={(data.meta?.current_page || page) >= (lastPage || 1)}
+                  disabled={(data.meta?.current_page || page) >= (lastPage || 1)}
                   sx={(t)=> ({ borderRadius: 1.5, minWidth: 36, fontWeight: 800, borderColor: t.palette.divider, color: t.palette.text.primary })}
                 >Próxima</Button>
               </Box>

@@ -265,7 +265,7 @@ export function ApiProvider({ children }) {
       if (!res.ok) throw new Error('Falha ao criar usuário')
       return await res.json()
     },
-    async listContacts(page=1, perPage=50, opts={}) {
+  async listContacts(page=1, perPage=50, opts={}) {
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
       // cache por página+filtros com TTL curto (5s)
@@ -282,8 +282,11 @@ export function ApiProvider({ children }) {
       const controller = new AbortController()
       const timeout = setTimeout(()=> controller.abort('timeout'), 10000)
       const url = new URL(`${apiBase}/contacts`)
-      url.searchParams.set('page', page)
-      url.searchParams.set('per_page', perPage)
+  url.searchParams.set('page', page)
+  // Compatibilidade com diferentes backends
+  url.searchParams.set('per_page', perPage)
+  url.searchParams.set('perPage', perPage)
+  url.searchParams.set('limit', perPage)
       if (q) url.searchParams.set('q', q)
       if (status) url.searchParams.set('status', status)
       const headers = { }
@@ -309,7 +312,53 @@ export function ApiProvider({ children }) {
             return await doFetch(false)
           }
           if (!res.ok) throw new Error('Erro ao carregar contatos')
-          const data = await res.json()
+          const raw = await res.json()
+          // Normalização de resposta paginada (aceita camelCase/snake_case e calcula last_page quando possível)
+          const normalizeListResponse = (rawData) => {
+            // lista pode estar em rawData.data ou ser o próprio array
+            const list = Array.isArray(rawData?.data) ? rawData.data : (Array.isArray(rawData) ? rawData : [])
+            let meta = rawData?.meta
+            const top = rawData || {}
+            const toNumber = (v, dflt) => {
+              const n = Number(v)
+              return Number.isFinite(n) ? n : dflt
+            }
+            if (!meta || typeof meta !== 'object') {
+              const current_page = top?.current_page ?? top?.currentPage
+              const per_page_v = top?.per_page ?? top?.perPage
+              const total_v = top?.total
+              let last_page = top?.last_page ?? top?.lastPage
+              const per_v = toNumber(per_page_v, perPage)
+              const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
+              if (!last_page && total_n && per_v) {
+                last_page = Math.max(1, Math.ceil(total_n / per_v))
+              }
+              meta = {
+                current_page: toNumber(current_page, page),
+                last_page: toNumber(last_page, 1),
+                per_page: per_v,
+                total: total_n,
+              }
+            } else {
+              const current_page = meta.current_page ?? meta.currentPage
+              const per_page_v = meta.per_page ?? meta.perPage
+              const total_v = meta.total
+              let last_page = meta.last_page ?? meta.lastPage
+              const per_v = toNumber(per_page_v, perPage)
+              const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
+              if (!last_page && total_n && per_v) {
+                last_page = Math.max(1, Math.ceil(total_n / per_v))
+              }
+              meta = {
+                current_page: toNumber(current_page, page),
+                last_page: toNumber(last_page, 1),
+                per_page: per_v,
+                total: total_n,
+              }
+            }
+            return { data: list, meta }
+          }
+          const data = normalizeListResponse(raw)
           if (newEtag) etagCache.set(cacheKey, newEtag)
           inMemoryCache.set(cacheKey, { ts: Date.now(), data })
           // persiste snapshot por sessão para start instantâneo em refresh
