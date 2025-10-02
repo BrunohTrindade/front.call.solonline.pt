@@ -257,13 +257,33 @@ export function ApiProvider({ children }) {
       })
     },
     async createUser(user) {
-      const res = await fetch(`${apiBase}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(user)
-      })
-      if (!res.ok) throw new Error('Falha ao criar usuário')
-      return await res.json()
+      try {
+        const res = await fetchJson(`${apiBase}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify(user)
+        })
+        if (res.ok) return await res.json()
+        // Tenta extrair mensagens do backend (ex.: 422 validation)
+        let message = 'Falha ao criar usuário'
+        try {
+          const err = await res.json()
+          if (err?.message) message = err.message
+          else if (err?.errors) {
+            // Laravel validation errors
+            const first = Object.values(err.errors).flat()[0]
+            if (first) message = String(first)
+          }
+        } catch {}
+        throw new Error(message)
+      } catch (err) {
+        // Normaliza erros de rede/CORS
+        const msg = String(err?.message || '')
+        if (/Failed to fetch|NetworkError|TypeError/i.test(msg)) {
+          throw new Error('Falha ao conectar ao servidor (rede/CORS). Verifique as permissões e tente novamente.')
+        }
+        throw err
+      }
     },
   async listContacts(page=1, perPage=50, opts={}) {
       const q = (opts?.q || '').trim()

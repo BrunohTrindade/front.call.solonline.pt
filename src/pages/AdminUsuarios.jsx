@@ -36,6 +36,7 @@ export default function AdminUsuarios(){
   const [showPwd, setShowPwd] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [msg, setMsg] = useState('')
+  const [msgType, setMsgType] = useState('success') // 'success' | 'error'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   // O modo de tema agora é controlado globalmente pelo ThemeModeContext
 
@@ -149,12 +150,18 @@ export default function AdminUsuarios(){
   async function submit(e){
     e.preventDefault()
     setMsg('')
+    setMsgType('success')
     try{
       const u = await createUser({ name, email, password, is_admin: isAdmin })
       setMsg(`Usuário criado: ${u.email}`)
+      setMsgType('success')
       setName(''); setEmail(''); setPassword(''); setIsAdmin(false)
       setShowPwd(false)
-    }catch(e){ setMsg('Erro: '+e.message) }
+    }catch(e){
+      const text = String(e?.message || 'Falha ao criar usuário')
+      setMsg(text.startsWith('Erro:') ? text : `Erro: ${text}`)
+      setMsgType('error')
+    }
   }
 
   return (
@@ -271,7 +278,11 @@ export default function AdminUsuarios(){
                 <h2 className="card-title" style={{textAlign:'center', fontSize:26}}>Criar usuário</h2>
                 <div className="muted" style={{textAlign:'center'}}>Logado como: {user?.name}</div>
               </div>
-              {msg && <div style={{textAlign:'center'}}><span className="badge badge-success">{msg}</span></div>}
+              {msg && (
+                <div style={{textAlign:'center'}}>
+                  <span className={`badge ${msgType==='error' ? 'badge-danger' : 'badge-success'}`}>{msg}</span>
+                </div>
+              )}
               <div>
                 <label className="label">Nome *</label>
                 <input className="input" value={name} onChange={e=>setName(e.target.value)} required />
