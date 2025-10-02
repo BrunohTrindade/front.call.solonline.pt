@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Build o projeto antes do commit
+npm run -s build || { echo "pre-commit: build falhou"; exit 1; }
+
+# Força adicionar o dist/index.html
+git add -f dist/index.html || true
