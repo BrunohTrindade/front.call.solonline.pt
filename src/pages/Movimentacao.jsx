@@ -736,6 +736,9 @@ export default function Movimentacao(){
             </div>
             {selected ? (
               <div className="space-y-3">
+                {(!user?.is_admin && selected?.processed_at) && (
+                  <Alert severity="info">Este registro já teve a observação gravada. Usuários comuns não podem editar novamente.</Alert>
+                )}
                 <Box sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', sm:'1fr 1fr' }, gap: 1.25 }}>
                   <Box sx={{ minWidth:0 }}>
                     <label className="label">Nome Completo</label>
@@ -796,8 +799,11 @@ export default function Movimentacao(){
                         setUnsaved(prev=> ({ ...prev, [selected.id]: value }))
                       }
                     }}
+                    disabled={!user?.is_admin && !!selected?.processed_at}
                     rows={6}
-                    placeholder="Digite suas observações sobre o processamento deste registro..."
+                    placeholder={!user?.is_admin && !!selected?.processed_at
+                      ? 'Observação já gravada. Somente administradores podem editar novamente.'
+                      : 'Digite suas observações sobre o processamento deste registro...'}
                   />
                   {dirty && (
                     <div className="muted" style={{ color: 'var(--danger)', marginTop: 6 }}>Pendente: você alterou a observação e precisa gravar.</div>
@@ -817,7 +823,7 @@ export default function Movimentacao(){
                   <Button
                     variant="contained"
                     onClick={salvar}
-                    disabled={!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === ''}
+                    disabled={(!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === '') || (!user?.is_admin && !!selected?.processed_at)}
                     sx={{ width: { xs: '100%', sm: 'auto' } }}
                   >Gravar Registro</Button>
                   {user?.is_admin && (
