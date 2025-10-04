@@ -256,9 +256,11 @@ export default function Movimentacao(){
     // Carrega observação não gravada (se houver) ou o valor atual salvo
     const draft = unsaved[id]
     const original = c?.observacao || ''
-    // Para usuários comuns: após primeira gravação (processed_at), não exibir mais o texto gravado
+    // Opção B: Para usuários comuns, após primeira gravação (processed_at), exibir o texto em modo somente leitura (sem permitir editar novamente)
     if (!user?.is_admin && c?.processed_at) {
-      setObservacao('')
+      // limpa rascunho para não marcar como pendente indevidamente
+      setUnsaved(prev=>{ const p={...prev}; delete p[id]; return p })
+      setObservacao(original)
       setDirty(false)
     } else {
       const value = (typeof draft === 'string') ? draft : original
@@ -809,7 +811,7 @@ export default function Movimentacao(){
                     )}
                   </div>
                   <div className="field readonly" style={{ marginTop: 6 }}>
-                    {user?.is_admin ? (selected.observacao || '—') : (selected?.processed_at ? '—' : (selected.observacao || '—'))}
+                    {selected.observacao || '—'}
                   </div>
                 </div>
 
@@ -833,7 +835,7 @@ export default function Movimentacao(){
                     disabled={!user?.is_admin && !!selected?.processed_at}
                     rows={6}
                     placeholder={!user?.is_admin && !!selected?.processed_at
-                      ? 'Observação já gravada. Somente administradores podem editar novamente.'
+                      ? 'Observação gravada (somente leitura para usuários comuns).'
                       : 'Digite suas observações sobre o processamento deste registro...'}
                   />
                   {dirty && (
