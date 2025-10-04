@@ -64,12 +64,14 @@ export default function Movimentacao(){
   // Altura máxima da lista para exibir 9 itens; do 10º em diante ativa rolagem
   const [listMaxHeight, setListMaxHeight] = useState(null)
   const [scriptText, setScriptText] = useState('')
+  const [loadError, setLoadError] = useState('')
 
   const scriptTexto = useMemo(()=>`Olá, aqui é da Agência SolOnline.\nTexto de abordagem e roteiro...`, [])
 
   async function load(){
     const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
     try{
+      setLoadError('')
       // aplica snapshot de sessão imediatamente, se existir, para sensação instantânea
       const snapList = api.getContactsSnapshot(page, perPage, { q: query, status: statusParam })
       if (snapList) setData(prev => prev?.meta?.current_page === snapList?.meta?.current_page && prev?.data?.length ? prev : snapList)
@@ -100,7 +102,8 @@ export default function Movimentacao(){
     const sc = await scriptPromise
     setScriptText(String(sc?.script || ''))
       return { res, s }
-    } catch {
+    } catch (e) {
+      setLoadError(e?.message || 'Falha ao carregar dados')
       return null
     }
   }
@@ -253,9 +256,15 @@ export default function Movimentacao(){
     // Carrega observação não gravada (se houver) ou o valor atual salvo
     const draft = unsaved[id]
     const original = c?.observacao || ''
-    const value = (typeof draft === 'string') ? draft : original
-    setObservacao(value)
-    setDirty(value !== original)
+    // Para usuários comuns: após primeira gravação (processed_at), não exibir mais o texto gravado
+    if (!user?.is_admin && c?.processed_at) {
+      setObservacao('')
+      setDirty(false)
+    } else {
+      const value = (typeof draft === 'string') ? draft : original
+      setObservacao(value)
+      setDirty(value !== original)
+    }
   }
 
   async function salvar(){
@@ -268,8 +277,15 @@ export default function Movimentacao(){
       setStatus('Salvo!')
       // Atualiza painel de detalhes sem perder seleção
       setSelected(prev => prev ? { ...prev, observacao: updated.observacao, processed_at: updated.processed_at } : prev)
-      setObservacao('')
-      setDirty(false)
+      // Para usuário comum, limpa e trava após a primeira gravação
+      if (!user?.is_admin) {
+        setObservacao('')
+        setDirty(false)
+      } else {
+        // Admin mantém edição livre
+        setObservacao('')
+        setDirty(false)
+      }
       // Remove rascunho não gravado desse registro, já que foi salvo
       setUnsaved(prev=>{ const p={...prev}; delete p[selected.id]; return p })
       // Atualiza lista e contadores
@@ -491,6 +507,19 @@ export default function Movimentacao(){
             <Alert severity="info">
               <AlertTitle>Aviso da Administração</AlertTitle>
               <div style={{ whiteSpace:'pre-wrap' }}>{scriptText}</div>
+            </Alert>
+          </Box>
+        )}
+        {loadError && (
+          <Box className="card" sx={{ mb: 2 }}>
+            <Alert severity="error">
+              <AlertTitle>Falha ao carregar registros</AlertTitle>
+              <div>
+                {loadError}
+                <div className="muted" style={{ marginTop: 6 }}>
+                  Dicas: verifique sua conexão; em redes móveis alguns provedores bloqueiam a porta 8080. Se isso ocorrer, habilite proxy de /api no servidor 8081 ou acesse via Wi‑Fi.
+                </div>
+              </div>
             </Alert>
           </Box>
         )}
@@ -779,7 +808,9 @@ export default function Movimentacao(){
                       }}>Editar</Button>
                     )}
                   </div>
-                  <div className="field readonly" style={{ marginTop: 6 }}>{selected.observacao || '—'}</div>
+                  <div className="field readonly" style={{ marginTop: 6 }}>
+                    {user?.is_admin ? (selected.observacao || '—') : (selected?.processed_at ? '—' : (selected.observacao || '—'))}
+                  </div>
                 </div>
 
                 <div>
