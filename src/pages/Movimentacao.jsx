@@ -68,7 +68,7 @@ export default function Movimentacao(){
 
   const scriptTexto = useMemo(()=>`Olá, aqui é da Agência SolOnline.\nTexto de abordagem e roteiro...`, [])
 
-  async function load(){
+  async function load(bust=false){
     const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
     try{
       setLoadError('')
@@ -79,8 +79,8 @@ export default function Movimentacao(){
       if (snapStats) setStats(prev => (prev?.total||0) ? prev : { total: snapStats.total||0, processed: snapStats.processed||0, pending: snapStats.pending||0 })
 
       // busca lista primeiro e aplica assim que chegar; stats em paralelo, sem bloquear a lista
-      const resPromise = listContacts(page, perPage, { q: query, status: statusParam })
-      const statsPromise = listContactsStats().catch(()=> ({ total:0, processed:0, pending:0 }))
+      const resPromise = listContacts(page, perPage, { q: query, status: statusParam, bust })
+      const statsPromise = listContactsStats({ bust }).catch(()=> ({ total:0, processed:0, pending:0 }))
       // hidrata o script com snapshot e depois atualiza com GET
       const snapScript = (sessionStorage.getItem('snapshot:settings:script'))
       if (snapScript) {
@@ -108,7 +108,7 @@ export default function Movimentacao(){
     }
   }
 
-  useEffect(()=>{ load() }, [page, perPage])
+  useEffect(()=>{ load(false) }, [page, perPage])
 
   // Força não-admin a usar apenas a visão 'all' e garante que o menu de filtro fique fechado
   useEffect(()=>{
@@ -171,7 +171,7 @@ export default function Movimentacao(){
       if(page !== 1){
         setPage(1) // trocar a página dispara o load() pelo efeito acima
       } else {
-        load()
+        load(true)
       }
     }, 250)
     return ()=> clearTimeout(t)
@@ -179,12 +179,12 @@ export default function Movimentacao(){
 
   // Auto-refresh: quando a janela ganhar foco ou a aba voltar a ficar visível
   useEffect(()=>{
-    function onFocus(){ load() }
-    function onVisibility(){ if(!document.hidden) load() }
+    function onFocus(){ load(true) }
+    function onVisibility(){ if(!document.hidden) load(true) }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
     // SSE: ouvir mudanças do backend e atualizar instantaneamente
-    const stop = api.openContactsStream({ onChange: ()=> { if(!dirty) load() } })
+    const stop = api.openContactsStream({ onChange: ()=> { if(!dirty) load(true) } })
     return ()=>{
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
@@ -196,7 +196,7 @@ export default function Movimentacao(){
   useEffect(()=>{
     const interval = setInterval(()=>{
       if(!document.hidden && !dirty){
-        load()
+        load(true)
       }
     }, 30000)
     return ()=> clearInterval(interval)
@@ -290,8 +290,8 @@ export default function Movimentacao(){
       }
       // Remove rascunho não gravado desse registro, já que foi salvo
       setUnsaved(prev=>{ const p={...prev}; delete p[selected.id]; return p })
-      // Atualiza lista e contadores
-      await load()
+  // Atualiza lista e contadores (bust para refletir imediatamente no mobile)
+  await load(true)
     }catch(e){ setStatus('Erro: '+e.message) }
   }
 
@@ -344,8 +344,8 @@ export default function Movimentacao(){
       setObservacao('')
       setDirty(false)
       setUnsaved(prev=>{ const p={...prev}; delete p[id]; return p })
-      // Recarrega imediatamente para confirmar com servidor e ajustar paginação
-      const loaded = await load()
+  // Recarrega imediatamente para confirmar com servidor e ajustar paginação
+  const loaded = await load(true)
       const curRes = loaded?.res
       // Se a página atual ficou sem itens mas há páginas anteriores, volta uma página (o efeito de page recarrega depois)
       const hasItems = Array.isArray(curRes?.data) ? curRes.data.length > 0 : false
@@ -609,6 +609,31 @@ export default function Movimentacao(){
                   )
                 }}
               />
+
+              {/* Atualizar (força bust) - mostra em telas pequenas para auxiliar mobile */}
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={async ()=>{
+                  try {
+                    const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
+                    const fresh = await listContacts(page, perPage, { q: query.trim(), status: statusParam, bust: true })
+                    setData(fresh)
+                    const s = await listContactsStats({ bust: true }).catch(()=>null)
+                    if (s) setStats({ total: s.total||0, processed: s.processed||0, pending: s.pending||0 })
+                    setLoadError('')
+                  } catch (e) {
+                    setLoadError(e?.message || 'Falha ao atualizar')
+                  }
+                }}
+                sx={{
+                  display: { xs: 'inline-flex', md: 'none' },
+                  height: 48,
+                  px: 2,
+                  fontWeight: 700,
+                  borderRadius: 2
+                }}
+              >Atualizar</Button>
 
               {user?.is_admin && (
                 <>
