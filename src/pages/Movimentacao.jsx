@@ -610,30 +610,6 @@ export default function Movimentacao(){
                 }}
               />
 
-              {/* Atualizar (força bust) - mostra em telas pequenas para auxiliar mobile */}
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={async ()=>{
-                  try {
-                    const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
-                    const fresh = await listContacts(page, perPage, { q: query.trim(), status: statusParam, bust: true })
-                    setData(fresh)
-                    const s = await listContactsStats({ bust: true }).catch(()=>null)
-                    if (s) setStats({ total: s.total||0, processed: s.processed||0, pending: s.pending||0 })
-                    setLoadError('')
-                  } catch (e) {
-                    setLoadError(e?.message || 'Falha ao atualizar')
-                  }
-                }}
-                sx={{
-                  display: { xs: 'inline-flex', md: 'none' },
-                  height: 48,
-                  px: 2,
-                  fontWeight: 700,
-                  borderRadius: 2
-                }}
-              >Atualizar</Button>
 
               {user?.is_admin && (
                 <>
