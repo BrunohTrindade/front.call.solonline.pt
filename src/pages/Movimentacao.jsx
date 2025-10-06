@@ -68,7 +68,7 @@ export default function Movimentacao(){
 
   const scriptTexto = useMemo(()=>`Olá, aqui é da Agência SolOnline.\nTexto de abordagem e roteiro...`, [])
 
-  async function load(){
+  async function load(bust=false){
     const statusParam = showOnly === 'pending' ? 'pending' : (showOnly === 'processed' ? 'processed' : '')
     try{
       setLoadError('')
@@ -79,8 +79,8 @@ export default function Movimentacao(){
       if (snapStats) setStats(prev => (prev?.total||0) ? prev : { total: snapStats.total||0, processed: snapStats.processed||0, pending: snapStats.pending||0 })
 
       // busca lista primeiro e aplica assim que chegar; stats em paralelo, sem bloquear a lista
-      const resPromise = listContacts(page, perPage, { q: query, status: statusParam })
-      const statsPromise = listContactsStats().catch(()=> ({ total:0, processed:0, pending:0 }))
+      const resPromise = listContacts(page, perPage, { q: query, status: statusParam, bust })
+      const statsPromise = listContactsStats({ bust }).catch(()=> ({ total:0, processed:0, pending:0 }))
       // hidrata o script com snapshot e depois atualiza com GET
       const snapScript = (sessionStorage.getItem('snapshot:settings:script'))
       if (snapScript) {
@@ -108,7 +108,7 @@ export default function Movimentacao(){
     }
   }
 
-  useEffect(()=>{ load() }, [page, perPage])
+  useEffect(()=>{ load(false) }, [page, perPage])
 
   // Força não-admin a usar apenas a visão 'all' e garante que o menu de filtro fique fechado
   useEffect(()=>{
@@ -171,7 +171,7 @@ export default function Movimentacao(){
       if(page !== 1){
         setPage(1) // trocar a página dispara o load() pelo efeito acima
       } else {
-        load()
+        load(true)
       }
     }, 250)
     return ()=> clearTimeout(t)
@@ -179,12 +179,12 @@ export default function Movimentacao(){
 
   // Auto-refresh: quando a janela ganhar foco ou a aba voltar a ficar visível
   useEffect(()=>{
-    function onFocus(){ load() }
-    function onVisibility(){ if(!document.hidden) load() }
+    function onFocus(){ load(true) }
+    function onVisibility(){ if(!document.hidden) load(true) }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
     // SSE: ouvir mudanças do backend e atualizar instantaneamente
-    const stop = api.openContactsStream({ onChange: ()=> { if(!dirty) load() } })
+    const stop = api.openContactsStream({ onChange: ()=> { if(!dirty) load(true) } })
     return ()=>{
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
@@ -196,7 +196,7 @@ export default function Movimentacao(){
   useEffect(()=>{
     const interval = setInterval(()=>{
       if(!document.hidden && !dirty){
-        load()
+        load(true)
       }
     }, 30000)
     return ()=> clearInterval(interval)
@@ -256,9 +256,11 @@ export default function Movimentacao(){
     // Carrega observação não gravada (se houver) ou o valor atual salvo
     const draft = unsaved[id]
     const original = c?.observacao || ''
-    // Para usuários comuns: após primeira gravação (processed_at), não exibir mais o texto gravado
+    // Opção B: Para usuários comuns, após primeira gravação (processed_at), exibir o texto em modo somente leitura (sem permitir editar novamente)
     if (!user?.is_admin && c?.processed_at) {
-      setObservacao('')
+      // limpa rascunho para não marcar como pendente indevidamente
+      setUnsaved(prev=>{ const p={...prev}; delete p[id]; return p })
+      setObservacao(original)
       setDirty(false)
     } else {
       const value = (typeof draft === 'string') ? draft : original
@@ -288,8 +290,8 @@ export default function Movimentacao(){
       }
       // Remove rascunho não gravado desse registro, já que foi salvo
       setUnsaved(prev=>{ const p={...prev}; delete p[selected.id]; return p })
-      // Atualiza lista e contadores
-      await load()
+  // Atualiza lista e contadores (bust para refletir imediatamente no mobile)
+  await load(true)
     }catch(e){ setStatus('Erro: '+e.message) }
   }
 
@@ -342,8 +344,8 @@ export default function Movimentacao(){
       setObservacao('')
       setDirty(false)
       setUnsaved(prev=>{ const p={...prev}; delete p[id]; return p })
-      // Recarrega imediatamente para confirmar com servidor e ajustar paginação
-      const loaded = await load()
+  // Recarrega imediatamente para confirmar com servidor e ajustar paginação
+  const loaded = await load(true)
       const curRes = loaded?.res
       // Se a página atual ficou sem itens mas há páginas anteriores, volta uma página (o efeito de page recarrega depois)
       const hasItems = Array.isArray(curRes?.data) ? curRes.data.length > 0 : false
@@ -510,19 +512,7 @@ export default function Movimentacao(){
             </Alert>
           </Box>
         )}
-        {loadError && (
-          <Box className="card" sx={{ mb: 2 }}>
-            <Alert severity="error">
-              <AlertTitle>Falha ao carregar registros</AlertTitle>
-              <div>
-                {loadError}
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Dicas: verifique sua conexão; em redes móveis alguns provedores bloqueiam a porta 8080. Se isso ocorrer, habilite proxy de /api no servidor 8081 ou acesse via Wi‑Fi.
-                </div>
-              </div>
-            </Alert>
-          </Box>
-        )}
+        {/* alerta de erro removido por solicitação do cliente; falhas ficam silenciosas */}
         <Box sx={{
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
@@ -607,6 +597,7 @@ export default function Movimentacao(){
                   )
                 }}
               />
+
 
               {user?.is_admin && (
                 <>
@@ -809,7 +800,7 @@ export default function Movimentacao(){
                     )}
                   </div>
                   <div className="field readonly" style={{ marginTop: 6 }}>
-                    {user?.is_admin ? (selected.observacao || '—') : (selected?.processed_at ? '—' : (selected.observacao || '—'))}
+                    {selected.observacao || '—'}
                   </div>
                 </div>
 
@@ -833,7 +824,7 @@ export default function Movimentacao(){
                     disabled={!user?.is_admin && !!selected?.processed_at}
                     rows={6}
                     placeholder={!user?.is_admin && !!selected?.processed_at
-                      ? 'Observação já gravada. Somente administradores podem editar novamente.'
+                      ? 'Observação gravada (somente leitura para usuários comuns).'
                       : 'Digite suas observações sobre o processamento deste registro...'}
                   />
                   {dirty && (

@@ -20,9 +20,8 @@ export function ApiProvider({ children }) {
   }, [user])
 
   // Base da API:
-  // - Se VITE_API_BASE estiver definido, usa-o.
-  // - Em desenvolvimento (Vite dev server), fallback para http://127.0.0.1:8000/api.
-  // - Em produção (build servido pelo Laravel), usa o origin atual + /api (respeita http/https).
+  // - Se VITE_API_BASE estiver definido, usa-o (tanto em dev quanto em produção).
+  // - Caso contrário: em dev usa http://127.0.0.1:8000/api; em produção usa a mesma origem + /api.
   const apiBase = (() => {
     const envBase = import.meta.env.VITE_API_BASE
     if (envBase) return envBase
@@ -289,15 +288,16 @@ export function ApiProvider({ children }) {
   async listContacts(page=1, perPage=50, opts={}) {
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
+      const bust = !!opts?.bust
       // cache por página+filtros com TTL curto (5s)
       const cacheKey = `contacts:${page}:${perPage}:${q}:${status}`
       const now = Date.now()
-      if (inMemoryCache.has(cacheKey)) {
+      if (!bust && inMemoryCache.has(cacheKey)) {
         const { ts, data } = inMemoryCache.get(cacheKey)
         if (now - ts < 5000) return data
       }
       // deduplicação: se já houver requisição em andamento para a mesma chave, retorna a mesma promise
-      if (inflight.has(cacheKey)) {
+      if (!bust && inflight.has(cacheKey)) {
         try { return await inflight.get(cacheKey).promise } finally { /* mantém inflight até resolver */ }
       }
       const controller = new AbortController()
@@ -310,12 +310,13 @@ export function ApiProvider({ children }) {
   url.searchParams.set('limit', perPage)
       if (q) url.searchParams.set('q', q)
       if (status) url.searchParams.set('status', status)
+      if (bust) url.searchParams.set('_ts', String(Date.now()))
       const headers = { }
       const etag = etagCache.get(cacheKey)
-      if (etag) headers['If-None-Match'] = etag
+      if (!bust && etag) headers['If-None-Match'] = etag
       const doFetch = async (withEtag=true) => {
         const hdrs = { ...headers }
-        if (!withEtag) { delete hdrs['If-None-Match'] }
+        if (!withEtag || bust) { delete hdrs['If-None-Match'] }
         const res = await fetchJson(url.toString(), { headers: hdrs, signal: controller.signal })
           clearTimeout(timeout)
           const newEtag = res.headers.get('ETag') || res.headers.get('Etag')
@@ -387,17 +388,20 @@ export function ApiProvider({ children }) {
           return data
       }
       const fetchPromise = doFetch(true).finally(()=> { inflight.delete(cacheKey) })
-      inflight.set(cacheKey, { controller, promise: fetchPromise })
+      if (!bust) inflight.set(cacheKey, { controller, promise: fetchPromise })
       return await fetchPromise
     },
-    async listContactsStats() {
+    async listContactsStats(opts={}) {
+      const bust = !!opts?.bust
       const key = 'contacts:stats'
       const controller = new AbortController()
       const timeout = setTimeout(()=> controller.abort('timeout'), 8000)
   const headers = { }
       const etag = etagCache.get(key)
-      if (etag) headers['If-None-Match'] = etag
-  let res = await fetchJson(`${apiBase}/contacts/stats`, { headers, signal: controller.signal })
+      if (!bust && etag) headers['If-None-Match'] = etag
+      const statsUrl = new URL(`${apiBase}/contacts/stats`)
+      if (bust) statsUrl.searchParams.set('_ts', String(Date.now()))
+  let res = await fetchJson(statsUrl.toString(), { headers, signal: controller.signal })
       clearTimeout(timeout)
       const newEtag = res.headers.get('ETag') || res.headers.get('Etag')
       if (res.status === 304 && inMemoryCache.has(key)) {
@@ -409,7 +413,7 @@ export function ApiProvider({ children }) {
       if (res.status === 304 && !inMemoryCache.has(key)) {
         // sem cache em memória, refaça sem If-None-Match
         const hdrs = { ...headers }; delete hdrs['If-None-Match']
-  res = await fetchJson(`${apiBase}/contacts/stats`, { headers: hdrs, signal: controller.signal })
+        res = await fetchJson(statsUrl.toString(), { headers: hdrs, signal: controller.signal })
       }
       if (!res.ok) throw new Error('Erro ao carregar estatísticas')
       const data = await res.json()
