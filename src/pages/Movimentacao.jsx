@@ -512,19 +512,7 @@ export default function Movimentacao(){
             </Alert>
           </Box>
         )}
-        {loadError && (
-          <Box className="card" sx={{ mb: 2 }}>
-            <Alert severity="error">
-              <AlertTitle>Falha ao carregar registros</AlertTitle>
-              <div>
-                {loadError}
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Dicas: verifique sua conexão; em redes móveis alguns provedores bloqueiam a porta 8080. Se isso ocorrer, habilite proxy de /api no servidor 8081 ou acesse via Wi‑Fi.
-                </div>
-              </div>
-            </Alert>
-          </Box>
-        )}
+        {/* alerta de erro removido por solicitação do cliente; falhas ficam silenciosas */}
         <Box sx={{
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },

@@ -20,9 +20,8 @@ export function ApiProvider({ children }) {
   }, [user])
 
   // Base da API:
-  // - Se VITE_API_BASE estiver definido, usa-o.
-  // - Em desenvolvimento (Vite dev server), fallback para http://127.0.0.1:8000/api.
-  // - Em produção (build servido pelo Laravel), usa o origin atual + /api (respeita http/https).
+  // - Se VITE_API_BASE estiver definido, usa-o (tanto em dev quanto em produção).
+  // - Caso contrário: em dev usa http://127.0.0.1:8000/api; em produção usa a mesma origem + /api.
   const apiBase = (() => {
     const envBase = import.meta.env.VITE_API_BASE
     if (envBase) return envBase
