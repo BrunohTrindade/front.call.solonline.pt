@@ -18,7 +18,21 @@ function PrivateRoute({ children }) {
   return token ? children : <Navigate to="/login" replace />
 }
 
-createRoot(document.getElementById('root')).render(
+const container = document.getElementById('root')
+if (!container) throw new Error('Elemento #root não encontrado')
+// Evita montar duas vezes: reaproveita um root único por container
+if (!container.__reactRoot) {
+  container.__reactRoot = createRoot(container)
+}
+// Suporte HMR/Vite: desmonta root anterior ao recarregar módulo, evitando múltiplas árvores
+if (import.meta && import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    try { container.__reactRoot?.unmount() } catch {}
+    try { delete container.__reactRoot } catch {}
+  })
+}
+
+container.__reactRoot.render(
   <React.StrictMode>
     <ThemeModeProvider>
       <ApiProvider>
