@@ -1,10 +1,10 @@
 import React, { Suspense, lazy } from 'react'
 import Logo from './imagens/LOGO_Sol_Online.png'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 const Login = lazy(()=> import('./pages/Login.jsx'))
 const Importacao = lazy(()=> import('./pages/Importacao.jsx'))
-const Movimentacao = lazy(()=> import('./pages/Movimentacao.jsx'))
+import Movimentacao from './pages/Movimentacao.jsx'
 const AdminUsuarios = lazy(()=> import('./pages/AdminUsuarios.jsx'))
 import { ApiProvider, useAuth } from './services/api.jsx'
 import './styles/index.css'
@@ -12,6 +12,14 @@ import './styles/theme.css'
 import { ThemeModeProvider } from './theme/ThemeModeContext.jsx'
 
 function Shell({ children }){ return <>{children}</> }
+
+function AppFallback() {
+  return (
+    <div style={{display:'grid',placeItems:'center',height:'100vh'}}>
+      <img src={Logo} alt="Sol Online" style={{height:72, width:'auto', opacity:.9}} />
+    </div>
+  )
+}
 
 function PrivateRoute({ children }) {
   const { token } = useAuth()
@@ -32,27 +40,29 @@ if (import.meta && import.meta.hot) {
   })
 }
 
+// Permite alternar o tipo de roteador via variável de ambiente
+// Use VITE_ROUTER_MODE=hash para evitar necessidade de rewrite no servidor
+const RouterComp = (import.meta?.env?.VITE_ROUTER_MODE === 'hash') ? HashRouter : BrowserRouter
+
 container.__reactRoot.render(
   <React.StrictMode>
     <ThemeModeProvider>
       <ApiProvider>
-        <BrowserRouter>
+        <RouterComp>
           <Shell>
-            <Suspense fallback={
-              <div style={{display:'grid',placeItems:'center',height:'100vh'}}>
-                <img src={Logo} alt="Sol Online" style={{height:72, width:'auto', opacity:.9}} />
-              </div>
-            }>
+            <Suspense fallback={<AppFallback />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/importacao" element={<PrivateRoute><Importacao /></PrivateRoute>} />
                 <Route path="/movimentacao" element={<PrivateRoute><Movimentacao /></PrivateRoute>} />
                 <Route path="/admin/usuarios" element={<PrivateRoute><AdminUsuarios /></PrivateRoute>} />
+                {/* Alias para evitar erros de digitação na URL */}
+                <Route path="/adminusuario" element={<Navigate to="/admin/usuarios" replace />} />
                 <Route path="*" element={<Navigate to="/movimentacao" replace />} />
               </Routes>
             </Suspense>
           </Shell>
-        </BrowserRouter>
+        </RouterComp>
       </ApiProvider>
     </ThemeModeProvider>
   </React.StrictMode>
