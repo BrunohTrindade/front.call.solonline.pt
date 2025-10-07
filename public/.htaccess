@@ -10,12 +10,48 @@
   RewriteRule ^ index.html [L]
 </IfModule>
 
-# Cache simples para assets comuns
+# Cache-Control e Expires: assets do build com cache agressivo e index.html sem cache
+<IfModule mod_headers.c>
+  # index.html deve ser sempre revalidado
+  <FilesMatch "^index\.html$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
+
+  # Assets fingerprintados (js, css, fontes, imagens) — 1 ano + immutable
+  <FilesMatch "\.(?:js|css|mjs|map|png|jpg|jpeg|gif|svg|webp|avif|ico|woff|woff2|ttf)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>
+
 <IfModule mod_expires.c>
   ExpiresActive On
-  ExpiresByType text/css "access plus 7 days"
-  ExpiresByType application/javascript "access plus 7 days"
-  ExpiresByType image/png "access plus 7 days"
-  ExpiresByType image/jpeg "access plus 7 days"
-  ExpiresByType image/svg+xml "access plus 7 days"
+  # index.html sem cache
+  <FilesMatch "^index\.html$">
+    ExpiresDefault "access plus 0 seconds"
+  </FilesMatch>
+  # Demais tipos com cache agressivo (reforço ao Cache-Control)
+  <FilesMatch "\.(?:js|css|mjs|map)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+  <FilesMatch "\.(?:png|jpg|jpeg|gif|svg|webp|avif|ico)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+  <FilesMatch "\.(?:woff|woff2|ttf)$">
+    ExpiresDefault "access plus 1 year"
+  </FilesMatch>
+</IfModule>
+
+# Compressão: Brotli (se disponível) e fallback para Deflate (gzip)
+<IfModule mod_brotli.c>
+  BrotliCompressionQuality 5
+  AddOutputFilterByType BROTLI_COMPRESS text/plain text/html text/css application/javascript application/json application/xml image/svg+xml
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/plain text/html text/css application/javascript application/json application/xml image/svg+xml
+  # Não comprimir binários já comprimidos
+  SetEnvIfNoCase Request_URI "\.(?:gif|jpe?g|png|webp|avif|mp4|mp3|ogg|zip|gz|bz2|rar|7z|pdf)$" no-gzip dont-vary
+  Header append Vary Accept-Encoding env=!dont-vary
 </IfModule>
