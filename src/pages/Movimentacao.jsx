@@ -36,7 +36,7 @@ import { useThemeMode } from '../theme/ThemeModeContext.jsx'
 
 export default function Movimentacao(){
   const api = useApi()
-  const { listContacts, updateContact, getContact, listContactsStats, deleteContact } = api
+  const { listContacts, updateContact, getContact, listContactsStats, deleteContact, listUsers, getContactVisibility, updateContactVisibility } = api
   const { user, logout } = useAuth()
   const displayName = api.getDisplayName?.() || ''
   const { mode, toggle } = useThemeMode()
@@ -61,6 +61,13 @@ export default function Movimentacao(){
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [deleteTargetId, setDeleteTargetId] = useState(null)
   const [deleteTargetNumero, setDeleteTargetNumero] = useState(null)
+  const isCommercial = !!user && (user.role === 'comercial' || user.is_commercial)
+
+  // Dialogo de visibilidade (admin)
+  const [visibOpen, setVisibOpen] = useState(false)
+  const [allUsers, setAllUsers] = useState([]) // [{id,name,email,role,is_admin,is_commercial}]
+  const [visibleUserIds, setVisibleUserIds] = useState([])
+  const [savingVisibility, setSavingVisibility] = useState(false)
   // Altura máxima da lista para exibir 9 itens; do 10º em diante ativa rolagem
   const [listMaxHeight, setListMaxHeight] = useState(null)
   const [scriptText, setScriptText] = useState('')
@@ -257,7 +264,7 @@ export default function Movimentacao(){
     const draft = unsaved[id]
     const original = c?.observacao || ''
     // Opção B: Para usuários comuns, após primeira gravação (processed_at), exibir o texto em modo somente leitura (sem permitir editar novamente)
-    if (!user?.is_admin && c?.processed_at) {
+    if (!user?.is_admin && (c?.processed_at || isCommercial)) {
       // limpa rascunho para não marcar como pendente indevidamente
       setUnsaved(prev=>{ const p={...prev}; delete p[id]; return p })
       setObservacao(original)
@@ -271,6 +278,7 @@ export default function Movimentacao(){
 
   async function salvar(){
     if(!selected) return
+    if (isCommercial) { setStatus('Usuário comercial não pode gravar.'); return }
     if ((observacao||'').trim() === (selected?.observacao||'').trim()) { setStatus('Sem alterações para gravar'); return }
     if ((observacao||'').trim() === '') { setStatus('Informe uma observação antes de gravar'); return }
     setStatus('Salvando...')
@@ -298,6 +306,7 @@ export default function Movimentacao(){
   async function excluir(idParam){
     const id = idParam ?? selected?.id
     if(!id) return
+    if (isCommercial) { setStatus('Usuário comercial não pode excluir.'); return }
     setStatus('Excluindo...')
     try{
       await deleteContact(id)
@@ -647,61 +656,96 @@ export default function Movimentacao(){
               </Button>
               )}
             </Box>
-            <ul
-              ref={listRef}
-              className="list"
-              style={{
-                // rolagem ativa a partir do 10º item
-                maxHeight: listMaxHeight || undefined,
-                overflowY: 'auto',
-                overflowX: 'hidden'
-              }}
-            >
-              {data.data
-                .filter(c=>{
-                  // Determina status processado/pendente considerando texto não gravado
-                  let isProcessed = !!c.processed_at
+            {(() => {
+              const visibleItems = useMemo(() => {
+                const list = Array.isArray(data?.data) ? data.data : []
+                const q = (query || '').toLowerCase()
+
+                const isProcessedEff = (c) => {
+                  let p = !!c.processed_at
                   const draft = unsaved[c.id]
                   const changed = typeof draft === 'string' && draft !== (c.observacao || '')
-                  if (changed) isProcessed = false
-                  if (selected?.id === c.id && dirty) isProcessed = false
-                  if(showOnly==='pending' && isProcessed) return false
-                  if(showOnly==='processed' && !isProcessed) return false
-                  if(!query) return true
-                  const q=query.toLowerCase()
-                  return [c.nome,c.email,c.empresa,c.telefone,c.nif].filter(Boolean).some(v=>String(v).toLowerCase().includes(q))
+                  if (changed) p = false
+                  if (selected?.id === c.id && dirty) p = false
+                  return p
+                }
+
+                const filtered = list.filter(c => {
+                  const proc = isProcessedEff(c)
+                  if (showOnly === 'pending' && proc) return false
+                  if (showOnly === 'processed' && !proc) return false
+                  if (!q) return true
+                  return [c.nome, c.email, c.empresa, c.telefone, c.nif]
+                    .filter(Boolean)
+                    .some(v => String(v).toLowerCase().includes(q))
                 })
-                .map((c)=>{
-                  let isProcessed = !!c.processed_at
-                  const draft = unsaved[c.id]
-                  const changed = typeof draft === 'string' && draft !== (c.observacao || '')
-                  if (changed) isProcessed = false
-                  // Se for o selecionado e houver alterações não salvas, mostrar como pendente
-                  if (selected?.id === c.id && dirty) isProcessed = false
-                  return (
-                    <li
-                      key={c.id}
-                      className={`list-item ${isProcessed?'processed':'pending'} ${selected?.id===c.id ? 'active' : ''}`}
-                      onClick={()=>pick(c.id)}
-                      tabIndex={0}
-                      onKeyDown={e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); pick(c.id) } }}
-                    >
-                      <div>
-                        <div style={{fontWeight:700}}>{c.nome}</div>
-                        <div className="muted" style={{fontSize:'.85rem'}}>{c.email}</div>
-                      </div>
-                      <div style={{textAlign:'right'}}>
-                        <div className="muted" style={{fontSize:'.8rem'}}>{`#${(c.numero ?? c.id)?.toString().padStart(3,'0')}`}</div>
-                        {isProcessed ? (
-                          <span className="badge badge-success">Processado</span>
-                        ) : (
-                          <span className="badge badge-danger">Pendente</span>
-                        )}
-                      </div>
-                    </li>
-                  )
-                })}
-            </ul>
+
+                const pending = []
+                const processed = []
+                for (const c of filtered) {
+                  (isProcessedEff(c) ? processed : pending).push(c)
+                }
+
+                // Pendentes: mais novos em cima (created_at desc; fallback id desc)
+                pending.sort((a,b) => {
+                  const ad = a.created_at ? new Date(a.created_at).getTime() : 0
+                  const bd = b.created_at ? new Date(b.created_at).getTime() : 0
+                  if (bd !== ad) return bd - ad
+                  return (b.id||0) - (a.id||0)
+                })
+
+                // Processados: ficam por último; entre eles, os mais recentemente processados por último
+                processed.sort((a,b) => {
+                  const ap = a.processed_at ? new Date(a.processed_at).getTime() : Number.POSITIVE_INFINITY
+                  const bp = b.processed_at ? new Date(b.processed_at).getTime() : Number.POSITIVE_INFINITY
+                  if (ap !== bp) return ap - bp // mais antigos primeiro, mais novos por último
+                  const ad = a.created_at ? new Date(a.created_at).getTime() : 0
+                  const bd = b.created_at ? new Date(b.created_at).getTime() : 0
+                  if (ad !== bd) return ad - bd
+                  return (a.id||0) - (b.id||0)
+                })
+
+                return [...pending, ...processed]
+              }, [data, query, showOnly, selected?.id, dirty, unsaved])
+
+              return (
+                <ul
+                  ref={listRef}
+                  className="list"
+                  style={{ maxHeight: listMaxHeight || undefined, overflowY: 'auto', overflowX: 'hidden' }}
+                >
+                  {visibleItems.map((c) => {
+                    let isProcessed = !!c.processed_at
+                    const draft = unsaved[c.id]
+                    const changed = typeof draft === 'string' && draft !== (c.observacao || '')
+                    if (changed) isProcessed = false
+                    if (selected?.id === c.id && dirty) isProcessed = false
+                    return (
+                      <li
+                        key={c.id}
+                        className={`list-item ${isProcessed ? 'processed' : 'pending'} ${selected?.id === c.id ? 'active' : ''}`}
+                        onClick={() => pick(c.id)}
+                        tabIndex={0}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(c.id) } }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{c.nome}</div>
+                          <div className="muted" style={{ fontSize: '.85rem' }}>{c.email}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="muted" style={{ fontSize: '.8rem' }}>{`#${(c.numero ?? c.id)?.toString().padStart(3, '0')}`}</div>
+                          {isProcessed ? (
+                            <span className="badge badge-success">Processado</span>
+                          ) : (
+                            <span className="badge badge-danger">Pendente</span>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )
+            })()}
             {/* Paginação da LISTA (dentro do card) centralizada, sem texto "Página X de Y" */}
             <Box className="flex items-center" sx={{ mt: 1, gap: 1, flexWrap: 'wrap', alignItems:'center', justifyContent:'center' }}>
               <Box className="flex" sx={{ gap: 1, alignItems:'center', justifyContent:'center', flexWrap:'wrap' }}>
@@ -821,7 +865,7 @@ export default function Movimentacao(){
                         setUnsaved(prev=> ({ ...prev, [selected.id]: value }))
                       }
                     }}
-                    disabled={!user?.is_admin && !!selected?.processed_at}
+                    disabled={isCommercial || (!user?.is_admin && !!selected?.processed_at)}
                     rows={6}
                     placeholder={!user?.is_admin && !!selected?.processed_at
                       ? 'Observação gravada (somente leitura para usuários comuns).'
@@ -845,7 +889,7 @@ export default function Movimentacao(){
                   <Button
                     variant="contained"
                     onClick={salvar}
-                    disabled={(!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === '') || (!user?.is_admin && !!selected?.processed_at)}
+                    disabled={isCommercial || (!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === '') || (!user?.is_admin && !!selected?.processed_at)}
                     sx={{ width: { xs: '100%', sm: 'auto' } }}
                   >Gravar Registro</Button>
                   {user?.is_admin && (
@@ -860,6 +904,29 @@ export default function Movimentacao(){
                       sx={{ width: { xs: '100%', sm: 'auto' } }}
                     >Excluir</Button>
                   )}
+                  {user?.is_admin && (
+                    <Button
+                      variant="outlined"
+                      onClick={async ()=>{
+                        if (!selected?.id) return
+                        // carrega usuários e visibilidade atual
+                        try {
+                          const [users, vis] = await Promise.all([
+                            listUsers(),
+                            getContactVisibility(selected.id)
+                          ])
+                          setAllUsers(users)
+                          setVisibleUserIds(Array.isArray(vis?.user_ids) ? vis.user_ids : [])
+                          setVisibOpen(true)
+                        } catch (e) {
+                          setAllUsers([])
+                          setVisibleUserIds([])
+                          setVisibOpen(true)
+                        }
+                      }}
+                      sx={{ width: { xs: '100%', sm: 'auto' } }}
+                    >Visibilidade…</Button>
+                  )}
                   {status && <span className="muted">{status}</span>}
                 </Box>
               </div>
@@ -868,6 +935,52 @@ export default function Movimentacao(){
             )}
           </div>
         </Box>
+        {/* Diálogo de visibilidade por registro (Admin) */}
+        <Dialog open={visibOpen} onClose={()=> !savingVisibility && setVisibOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Visibilidade do registro</DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" sx={{ mb: 1.5 }}>
+              Selecione os usuários que poderão visualizar este registro (além de admins).
+            </Typography>
+            <Box sx={{ display:'grid', gap: .5 }}>
+              {allUsers.length === 0 && (
+                <Typography variant="body2" color="text.secondary">Sem usuários para listar.</Typography>
+              )}
+              {allUsers.map(u => {
+                const label = u.name || u.email
+                const role = u.role || (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal'))
+                const checked = visibleUserIds.includes(u.id)
+                return (
+                  <label key={u.id} className="flex items-center justify-between" style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                    <span className="flex items-center gap-2">
+                      <input type="checkbox" checked={checked} onChange={(e)=>{
+                        const on = e.target.checked
+                        setVisibleUserIds(prev => on ? Array.from(new Set([...prev, u.id])) : prev.filter(id => id !== u.id))
+                      }} />
+                      <span>{label}</span>
+                    </span>
+                    <span className="badge" style={{ textTransform:'capitalize' }}>{role}</span>
+                  </label>
+                )
+              })}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={()=> setVisibOpen(false)} disabled={savingVisibility}>Fechar</Button>
+            <Button variant="contained" onClick={async ()=>{
+              if (!selected?.id) return
+              setSavingVisibility(true)
+              try{
+                await updateContactVisibility(selected.id, visibleUserIds)
+                setVisibOpen(false)
+              }catch(e){
+                // mantém aberto; poderia exibir snackbar
+              } finally {
+                setSavingVisibility(false)
+              }
+            }} disabled={savingVisibility}>Salvar</Button>
+          </DialogActions>
+        </Dialog>
         {/* Dialogo de confirmação de exclusão */}
         <Dialog open={confirmDeleteOpen} onClose={()=> setConfirmDeleteOpen(false)}>
           <DialogTitle>Confirmar exclusão</DialogTitle>

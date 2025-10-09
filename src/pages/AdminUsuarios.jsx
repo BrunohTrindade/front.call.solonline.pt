@@ -13,7 +13,8 @@ import {
   Tooltip,
   Divider,
   Container,
-  Drawer, List, ListItemButton, ListItemIcon, ListItemText, Switch
+  Drawer, List, ListItemButton, ListItemIcon, ListItemText, Switch,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Alert
 } from '@mui/material'
 import { alpha } from '@mui/material/styles'
 import {
@@ -30,14 +31,23 @@ export default function AdminUsuarios(){
   const { createUser } = useApi()
   const { user, logout } = useAuth()
   const { mode, toggle } = useThemeMode()
+  const { listUsers, updateUserActive, deleteUser } = useApi()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false)
+  // Tipo de usuário: 'admin' | 'normal' | 'comercial'.
+  // Usaremos 3 checkboxes visuais, mas o estado é exclusivo (um ou nenhum selecionado)
+  const [selectedType, setSelectedType] = useState('')
   const [msg, setMsg] = useState('')
   const [msgType, setMsgType] = useState('success') // 'success' | 'error'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // Popup de usuários
+  const [usersOpen, setUsersOpen] = useState(false)
+  const [users, setUsers] = useState([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [filterText, setFilterText] = useState('')
+  const [usersMsg, setUsersMsg] = useState('')
   // O modo de tema agora é controlado globalmente pelo ThemeModeContext
 
   if(!user?.is_admin){
@@ -152,10 +162,19 @@ export default function AdminUsuarios(){
     setMsg('')
     setMsgType('success')
     try{
-      const u = await createUser({ name, email, password, is_admin: isAdmin })
+      if (!selectedType) {
+        setMsg('Selecione o tipo de usuário (Admin, Normal ou Comercial).')
+        setMsgType('error')
+        return
+      }
+      const isAdmin = selectedType === 'admin'
+      const role = isAdmin ? 'admin' : selectedType
+      const isCommercial = selectedType === 'comercial'
+      const payload = { name, email, password, is_admin: isAdmin, role, is_commercial: isCommercial }
+      const u = await createUser(payload)
       setMsg(`Usuário criado: ${u.email}`)
       setMsgType('success')
-      setName(''); setEmail(''); setPassword(''); setIsAdmin(false)
+      setName(''); setEmail(''); setPassword(''); setSelectedType('')
       setShowPwd(false)
     }catch(e){
       const text = String(e?.message || 'Falha ao criar usuário')
@@ -181,7 +200,6 @@ export default function AdminUsuarios(){
               <Typography variant="caption" color="text.secondary">Criar novo usuário</Typography>
             </Box>
           </Box>
-          {/* Ações: visíveis em sm+ (tablet/desktop). No mobile, use Drawer */}
           <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1.25 }}>
             <Chip
               size="small"
@@ -225,6 +243,17 @@ export default function AdminUsuarios(){
             )}
             <Divider orientation="vertical" flexItem sx={{ mx: .5, opacity: .4 }} />
             <Button variant="outlined" component={RouterLink} to="/movimentacao">Voltar</Button>
+            {user?.is_admin && (
+              <Button
+                variant="contained"
+                onClick={async ()=>{
+                  setUsersOpen(true)
+                  setUsersMsg('')
+                  setLoadingUsers(true)
+                  try { const list = await listUsers(); setUsers(list) } catch(e){ setUsersMsg(e?.message||'Erro ao carregar usuários') } finally { setLoadingUsers(false) }
+                }}
+              >Gerenciar Usuários</Button>
+            )}
           </Box>
           {/* Botão de menu - apenas mobile */}
           <Box sx={{ display: { xs: 'flex', sm: 'none' } }}>
@@ -298,11 +327,36 @@ export default function AdminUsuarios(){
                   <button type="button" className="input-icon-btn" onClick={()=>setShowPwd(v=>!v)} title={showPwd?'Ocultar':'Mostrar'}>👁️</button>
                 </div>
               </div>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={isAdmin} onChange={e=>setIsAdmin(e.target.checked)} /> Administrador
-              </label>
+              {/* Seletor por 3 checkboxes exclusivas (Admin, Normal, Comercial) */}
               <div>
-                <button className="btn btn-primary btn-block" type="submit">Criar Usuário</button>
+                <label className="label">Tipo de usuário</label>
+                <div className="flex items-center gap-4" role="group" aria-label="Selecionar tipo de usuário">
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedType==='admin'}
+                      onChange={()=> setSelectedType(selectedType==='admin' ? '' : 'admin')}
+                    /> Admin
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedType==='normal'}
+                      onChange={()=> setSelectedType(selectedType==='normal' ? '' : 'normal')}
+                    /> Normal
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedType==='comercial'}
+                      onChange={()=> setSelectedType(selectedType==='comercial' ? '' : 'comercial')}
+                    /> Comercial (somente leitura)
+                  </label>
+                </div>
+                <div className="muted" style={{fontSize:'.85rem'}}>Selecione apenas um. Comercial não pode editar nem excluir registros. Admin tem acesso total.</div>
+              </div>
+              <div>
+                <button className="btn btn-primary btn-block" type="submit" disabled={!selectedType}>Criar Usuário</button>
               </div>
               <div style={{textAlign:'center'}}>
                 <RouterLink className="link" to="/movimentacao">Voltar</RouterLink>
@@ -311,6 +365,57 @@ export default function AdminUsuarios(){
           </Box>
         </Container>
       </Box>
+      {/* Diálogo de usuários cadastrados */}
+      <Dialog open={usersOpen} onClose={()=> setUsersOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Usuários cadastrados</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display:'flex', gap: 1, mb: 2 }}>
+            <TextField size="small" fullWidth placeholder="Filtrar por nome ou email" value={filterText} onChange={e=>setFilterText(e.target.value)} />
+            <Button variant="outlined" onClick={async ()=>{
+              setUsersMsg('')
+              setLoadingUsers(true)
+              try { const list = await listUsers(); setUsers(list) } catch(e){ setUsersMsg(e?.message||'Erro ao carregar usuários') } finally { setLoadingUsers(false) }
+            }}>Atualizar</Button>
+          </Box>
+          {usersMsg && <Alert severity="error" sx={{ mb: 1 }}>{usersMsg}</Alert>}
+          <Box sx={{ display:'grid', gap: 1 }}>
+            {loadingUsers && <Typography variant="body2">Carregando...</Typography>}
+            {!loadingUsers && users
+              .filter(u=>{
+                const f = filterText.trim().toLowerCase()
+                if(!f) return true
+                return [u.name, u.email, u.role].filter(Boolean).some(v => String(v).toLowerCase().includes(f))
+              })
+              .map(u => (
+                <Box key={u.id} sx={{ display:'flex', alignItems:'center', justifyContent:'space-between', border: t=>`1px solid ${t.palette.divider}`, borderRadius: 1.5, p: 1 }}>
+                  <Box sx={{ display:'flex', flexDirection:'column' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>{u.name || u.email}</Typography>
+                    <Typography variant="caption" color="text.secondary">{u.email}</Typography>
+                    <Box sx={{ display:'flex', gap: 1, mt: .5 }}>
+                      <Chip size="small" label={String(u.role||'normal')} sx={{ textTransform:'capitalize' }} />
+                      <Chip size="small" color={u.active ? 'success' : 'default'} variant={u.active ? 'filled' : 'outlined'} label={u.active ? 'Ativo' : 'Inativo'} />
+                    </Box>
+                  </Box>
+                  <Box sx={{ display:'flex', gap: 1 }}>
+                    <Button size="small" variant="outlined" onClick={async ()=>{
+                      try{ await updateUserActive(u.id, !u.active); setUsers(prev => prev.map(x => x.id===u.id ? { ...x, active: !u.active } : x)) }catch(e){ setUsersMsg(e?.message||'Erro ao atualizar status') }
+                    }}>{u.active ? 'Desativar' : 'Ativar'}</Button>
+                    <Button size="small" color="error" variant="outlined" onClick={async ()=>{
+                      if (!confirm(`Excluir usuário ${u.email}?`)) return
+                      try{ await deleteUser(u.id); setUsers(prev => prev.filter(x => x.id !== u.id)) }catch(e){ setUsersMsg(e?.message||'Erro ao excluir usuário') }
+                    }}>Excluir</Button>
+                  </Box>
+                </Box>
+              ))}
+            {!loadingUsers && users.length === 0 && (
+              <Typography variant="body2" color="text.secondary">Nenhum usuário encontrado.</Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={()=> setUsersOpen(false)}>Fechar</Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }

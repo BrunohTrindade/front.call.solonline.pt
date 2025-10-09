@@ -19,9 +19,6 @@ export function ApiProvider({ children }) {
     else localStorage.removeItem('user')
   }, [user])
 
-  // Base da API:
-  // - Se VITE_API_BASE estiver definido, usa-o (tanto em dev quanto em produção).
-  // - Caso contrário: em dev usa http://127.0.0.1:8000/api; em produção usa a mesma origem + /api.
   const apiBase = (() => {
     const envBase = import.meta.env.VITE_API_BASE
     if (envBase) return envBase
@@ -30,13 +27,12 @@ export function ApiProvider({ children }) {
     return `${window.location.origin.replace(/\/$/, '')}/api`
   })()
 
-  // cache simples em memória para algumas chamadas (dados) e ETags
+  // Caches por instância do Provider
   const inMemoryCache = new Map()
-  const etagCache = new Map() // key -> ETag
-  const inflight = new Map() // key -> { controller, promise }
+  const etagCache = new Map()
+  const inflight = new Map()
 
-  // snapshots rápidos por sessão (sobrevivem a refresh) para tela parecer instantânea
-  const SNAP_TTL_MS = 60_000 // 60s é suficiente; sempre revalidamos em background
+  const SNAP_TTL_MS = 60_000
   const ssGet = (key) => {
     try {
       const raw = sessionStorage.getItem(key)
@@ -51,7 +47,6 @@ export function ApiProvider({ children }) {
     try { sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data })) } catch {}
   }
 
-  // utilitário interno para invalidar cache de contatos (dados e ETags)
   const clearContactsCache = () => {
     try {
       for (const key of Array.from(inMemoryCache.keys())) {
@@ -67,10 +62,8 @@ export function ApiProvider({ children }) {
     try {
       setToken('');
       setUser(null);
-      // opcional: mensagem de sessão
       try { sessionStorage.setItem('auth_msg', 'Sua sessão expirou. Faça login novamente.'); } catch {}
     } finally {
-      // redireciona para login
       if (window.location.pathname !== '/login') {
         window.location.assign('/login')
       }
@@ -90,11 +83,9 @@ export function ApiProvider({ children }) {
   }
 
   const api = useMemo(() => ({
-    // Utilitário: gera um nome amigável a partir do e-mail (ex: joao.silva@ -> "Joao Silva")
     getDisplayName() {
       const u = user
       if (!u) return ''
-      // Se houver name vindo do backend, prioriza
       if (u.name && typeof u.name === 'string' && u.name.trim().length > 0) return u.name.trim()
       const email = (u.email || '').trim()
       if (!email) return ''
@@ -104,7 +95,6 @@ export function ApiProvider({ children }) {
       if (!sep) return ''
       return sep.split(' ').map(p => p ? (p.charAt(0).toUpperCase() + p.slice(1)) : '').join(' ')
     },
-    // snapshots (somente leitura)
     getContactsSnapshot(page=1, perPage=50, opts={}){
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
@@ -120,10 +110,19 @@ export function ApiProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       })
-      if (!res.ok) throw new Error('Login inválido')
+      if (!res.ok) {
+        try {
+          const err = await res.json()
+          if (res.status === 403 && err?.message) throw new Error(err.message)
+          if (err?.message) throw new Error(err.message)
+        } catch {}
+        throw new Error('Login inválido')
+      }
       const data = await res.json()
       setToken(data.token)
-      setUser(data.user)
+      const u = data.user || {}
+      const role = (u.role || (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal')))
+      setUser({ ...u, role, is_admin: !!u.is_admin, is_commercial: role === 'comercial' })
       return data
     },
     async logout() {
@@ -133,7 +132,11 @@ export function ApiProvider({ children }) {
     },
     async me() {
       const res = await fetchJson(`${apiBase}/me`)
-      if (res.ok) { setUser(await res.json()) }
+      if (res.ok) {
+        const u = await res.json()
+        const role = (u.role || (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal')))
+        setUser({ ...u, role, is_admin: !!u.is_admin, is_commercial: role === 'comercial' })
+      }
     },
     async importCsv(file, mapping) {
       const form = new FormData()
@@ -162,7 +165,6 @@ export function ApiProvider({ children }) {
       clearContactsCache()
       return data
     },
-    // Importação em background: retorna { jobId }
     async importCsvInBackground(file, mapping) {
       const form = new FormData()
       form.append('file', file)
@@ -181,17 +183,13 @@ export function ApiProvider({ children }) {
       if (!res.ok) throw new Error('Falha ao iniciar importação em background')
       return await res.json()
     },
-    // Abrir SSE de progresso de importação
     openImportProgressStream(jobId, { onProgress, onDone, onError } = {}) {
       const url = `${apiBase.replace(/\/api$/, '')}/api/events/import/${encodeURIComponent(jobId)}`
       const es = new EventSource(url, { withCredentials: true })
-      es.onmessage = (ev) => {
-        // mensagens sem event específico
-      }
       es.addEventListener('progress', (ev) => {
         try { const data = JSON.parse(ev.data||'{}'); onProgress && onProgress(data) } catch {}
       })
-      es.addEventListener('ping', () => { /* keep-alive */ })
+      es.addEventListener('ping', () => {})
       es.onerror = (e) => { onError && onError(e); es.close() }
       es.addEventListener('progress', (ev) => {
         try {
@@ -216,7 +214,7 @@ export function ApiProvider({ children }) {
           }
           const xhr = new XMLHttpRequest()
           xhr.open('POST', `${apiBase}/contacts/import`)
-          xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+          if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
           xhr.setRequestHeader('Accept', 'application/json')
           xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
           if (xhr.upload && typeof onProgress === 'function') {
@@ -256,28 +254,25 @@ export function ApiProvider({ children }) {
         }
       })
     },
-    async createUser(user) {
+    async createUser(newUser) {
       try {
         const res = await fetchJson(`${apiBase}/users`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-          body: JSON.stringify(user)
+          body: JSON.stringify(newUser)
         })
         if (res.ok) return await res.json()
-        // Tenta extrair mensagens do backend (ex.: 422 validation)
         let message = 'Falha ao criar usuário'
         try {
           const err = await res.json()
           if (err?.message) message = err.message
           else if (err?.errors) {
-            // Laravel validation errors
             const first = Object.values(err.errors).flat()[0]
             if (first) message = String(first)
           }
         } catch {}
         throw new Error(message)
       } catch (err) {
-        // Normaliza erros de rede/CORS
         const msg = String(err?.message || '')
         if (/Failed to fetch|NetworkError|TypeError/i.test(msg)) {
           throw new Error('Falha ao conectar ao servidor (rede/CORS). Verifique as permissões e tente novamente.')
@@ -285,29 +280,52 @@ export function ApiProvider({ children }) {
         throw err
       }
     },
-  async listContacts(page=1, perPage=50, opts={}) {
+    async listUsers() {
+      const res = await fetchJson(`${apiBase}/users`, { method: 'GET' })
+      if (!res.ok) throw new Error('Erro ao listar usuários')
+      const raw = await res.json()
+      const arr = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw) ? raw : [])
+      return arr.map(u => {
+        const role = (typeof u.role !== 'undefined') ? u.role : (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal'))
+        const active = (typeof u.active !== 'undefined') ? !!u.active : (typeof u.is_active !== 'undefined') ? !!u.is_active : (u.status ? String(u.status).toLowerCase() !== 'inactive' : true)
+        const isCommercial = (typeof u.is_commercial !== 'undefined') ? !!u.is_commercial : role === 'comercial'
+        return { ...u, role, is_admin: !!u.is_admin, is_commercial: isCommercial, active, is_active: active, status: active ? (u.status || 'active') : 'inactive' }
+      })
+    },
+    async updateUserActive(id, active) {
+      const res = await fetchJson(`${apiBase}/users/${id}/active`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !!active })
+      })
+      if (!res.ok) throw new Error('Erro ao atualizar status do usuário')
+      try { return await res.json() } catch { return { ok: true } }
+    },
+    async deleteUser(id) {
+      const res = await fetchJson(`${apiBase}/users/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Erro ao excluir usuário')
+      try { return await res.json() } catch { return { ok: true } }
+    },
+    async listContacts(page=1, perPage=50, opts={}) {
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
       const bust = !!opts?.bust
-      // cache por página+filtros com TTL curto (5s)
       const cacheKey = `contacts:${page}:${perPage}:${q}:${status}`
       const now = Date.now()
       if (!bust && inMemoryCache.has(cacheKey)) {
         const { ts, data } = inMemoryCache.get(cacheKey)
         if (now - ts < 5000) return data
       }
-      // deduplicação: se já houver requisição em andamento para a mesma chave, retorna a mesma promise
       if (!bust && inflight.has(cacheKey)) {
-        try { return await inflight.get(cacheKey).promise } finally { /* mantém inflight até resolver */ }
+        try { return await inflight.get(cacheKey).promise } finally {}
       }
       const controller = new AbortController()
       const timeout = setTimeout(()=> controller.abort('timeout'), 10000)
       const url = new URL(`${apiBase}/contacts`)
-  url.searchParams.set('page', page)
-  // Compatibilidade com diferentes backends
-  url.searchParams.set('per_page', perPage)
-  url.searchParams.set('perPage', perPage)
-  url.searchParams.set('limit', perPage)
+      url.searchParams.set('page', page)
+      url.searchParams.set('per_page', perPage)
+      url.searchParams.set('perPage', perPage)
+      url.searchParams.set('limit', perPage)
       if (q) url.searchParams.set('q', q)
       if (status) url.searchParams.set('status', status)
       if (bust) url.searchParams.set('_ts', String(Date.now()))
@@ -318,74 +336,67 @@ export function ApiProvider({ children }) {
         const hdrs = { ...headers }
         if (!withEtag || bust) { delete hdrs['If-None-Match'] }
         const res = await fetchJson(url.toString(), { headers: hdrs, signal: controller.signal })
-          clearTimeout(timeout)
-          const newEtag = res.headers.get('ETag') || res.headers.get('Etag')
-          if (res.status === 304 && inMemoryCache.has(cacheKey)) {
-            // não modificado: retorna cache e atualiza timestamp
-            const cached = inMemoryCache.get(cacheKey).data
-            inMemoryCache.set(cacheKey, { ts: Date.now(), data: cached })
-            // atualiza snapshot de sessão para hidratação em refresh
-            ssSet(`snapshot:${cacheKey}`, cached)
-            return cached
+        clearTimeout(timeout)
+        const newEtag = res.headers.get('ETag') || res.headers.get('Etag')
+        if (res.status === 304 && inMemoryCache.has(cacheKey)) {
+          const cached = inMemoryCache.get(cacheKey).data
+          inMemoryCache.set(cacheKey, { ts: Date.now(), data: cached })
+          ssSet(`snapshot:${cacheKey}`, cached)
+          return cached
+        }
+        if (res.status === 304 && !inMemoryCache.has(cacheKey)) {
+          return await doFetch(false)
+        }
+        if (!res.ok) throw new Error('Erro ao carregar contatos')
+        const raw = await res.json()
+        const normalizeListResponse = (rawData) => {
+          const list = Array.isArray(rawData?.data) ? rawData.data : (Array.isArray(rawData) ? rawData : [])
+          let meta = rawData?.meta
+          const top = rawData || {}
+          const toNumber = (v, dflt) => {
+            const n = Number(v)
+            return Number.isFinite(n) ? n : dflt
           }
-          if (res.status === 304 && !inMemoryCache.has(cacheKey)) {
-            // recebemos 304 mas não temos cache em memória (ex: cache invalidado após escrita)
-            // refaz a requisição sem If-None-Match para forçar 200
-            return await doFetch(false)
-          }
-          if (!res.ok) throw new Error('Erro ao carregar contatos')
-          const raw = await res.json()
-          // Normalização de resposta paginada (aceita camelCase/snake_case e calcula last_page quando possível)
-          const normalizeListResponse = (rawData) => {
-            // lista pode estar em rawData.data ou ser o próprio array
-            const list = Array.isArray(rawData?.data) ? rawData.data : (Array.isArray(rawData) ? rawData : [])
-            let meta = rawData?.meta
-            const top = rawData || {}
-            const toNumber = (v, dflt) => {
-              const n = Number(v)
-              return Number.isFinite(n) ? n : dflt
+          if (!meta || typeof meta !== 'object') {
+            const current_page = top?.current_page ?? top?.currentPage
+            const per_page_v = top?.per_page ?? top?.perPage
+            const total_v = top?.total
+            let last_page = top?.last_page ?? top?.lastPage
+            const per_v = toNumber(per_page_v, perPage)
+            const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
+            if (!last_page && total_n && per_v) {
+              last_page = Math.max(1, Math.ceil(total_n / per_v))
             }
-            if (!meta || typeof meta !== 'object') {
-              const current_page = top?.current_page ?? top?.currentPage
-              const per_page_v = top?.per_page ?? top?.perPage
-              const total_v = top?.total
-              let last_page = top?.last_page ?? top?.lastPage
-              const per_v = toNumber(per_page_v, perPage)
-              const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
-              if (!last_page && total_n && per_v) {
-                last_page = Math.max(1, Math.ceil(total_n / per_v))
-              }
-              meta = {
-                current_page: toNumber(current_page, page),
-                last_page: toNumber(last_page, 1),
-                per_page: per_v,
-                total: total_n,
-              }
-            } else {
-              const current_page = meta.current_page ?? meta.currentPage
-              const per_page_v = meta.per_page ?? meta.perPage
-              const total_v = meta.total
-              let last_page = meta.last_page ?? meta.lastPage
-              const per_v = toNumber(per_page_v, perPage)
-              const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
-              if (!last_page && total_n && per_v) {
-                last_page = Math.max(1, Math.ceil(total_n / per_v))
-              }
-              meta = {
-                current_page: toNumber(current_page, page),
-                last_page: toNumber(last_page, 1),
-                per_page: per_v,
-                total: total_n,
-              }
+            meta = {
+              current_page: toNumber(current_page, page),
+              last_page: toNumber(last_page, 1),
+              per_page: per_v,
+              total: total_n,
             }
-            return { data: list, meta }
+          } else {
+            const current_page = meta.current_page ?? meta.currentPage
+            const per_page_v = meta.per_page ?? meta.perPage
+            const total_v = meta.total
+            let last_page = meta.last_page ?? meta.lastPage
+            const per_v = toNumber(per_page_v, perPage)
+            const total_n = toNumber(total_v, Array.isArray(list) ? list.length : 0)
+            if (!last_page && total_n && per_v) {
+              last_page = Math.max(1, Math.ceil(total_n / per_v))
+            }
+            meta = {
+              current_page: toNumber(current_page, page),
+              last_page: toNumber(last_page, 1),
+              per_page: per_v,
+              total: total_n,
+            }
           }
-          const data = normalizeListResponse(raw)
-          if (newEtag) etagCache.set(cacheKey, newEtag)
-          inMemoryCache.set(cacheKey, { ts: Date.now(), data })
-          // persiste snapshot por sessão para start instantâneo em refresh
-          ssSet(`snapshot:${cacheKey}`, data)
-          return data
+          return { data: list, meta }
+        }
+        const data = normalizeListResponse(raw)
+        if (newEtag) etagCache.set(cacheKey, newEtag)
+        inMemoryCache.set(cacheKey, { ts: Date.now(), data })
+        ssSet(`snapshot:${cacheKey}`, data)
+        return data
       }
       const fetchPromise = doFetch(true).finally(()=> { inflight.delete(cacheKey) })
       if (!bust) inflight.set(cacheKey, { controller, promise: fetchPromise })
@@ -396,12 +407,12 @@ export function ApiProvider({ children }) {
       const key = 'contacts:stats'
       const controller = new AbortController()
       const timeout = setTimeout(()=> controller.abort('timeout'), 8000)
-  const headers = { }
+      const headers = { }
       const etag = etagCache.get(key)
       if (!bust && etag) headers['If-None-Match'] = etag
       const statsUrl = new URL(`${apiBase}/contacts/stats`)
       if (bust) statsUrl.searchParams.set('_ts', String(Date.now()))
-  let res = await fetchJson(statsUrl.toString(), { headers, signal: controller.signal })
+      let res = await fetchJson(statsUrl.toString(), { headers, signal: controller.signal })
       clearTimeout(timeout)
       const newEtag = res.headers.get('ETag') || res.headers.get('Etag')
       if (res.status === 304 && inMemoryCache.has(key)) {
@@ -411,7 +422,6 @@ export function ApiProvider({ children }) {
         return cached
       }
       if (res.status === 304 && !inMemoryCache.has(key)) {
-        // sem cache em memória, refaça sem If-None-Match
         const hdrs = { ...headers }; delete hdrs['If-None-Match']
         res = await fetchJson(statsUrl.toString(), { headers: hdrs, signal: controller.signal })
       }
@@ -422,7 +432,6 @@ export function ApiProvider({ children }) {
       ssSet('snapshot:contacts:stats', data)
       return data
     },
-    // Settings: script de instruções/aviso
     async getScript() {
       const key = 'settings:script'
       const headers = {}
@@ -453,15 +462,12 @@ export function ApiProvider({ children }) {
         body: JSON.stringify({ script: value ?? '' })
       })
       if (!res.ok) throw new Error('Erro ao salvar script')
-      // invalida cache local
       inMemoryCache.delete('settings:script')
       etagCache.delete('settings:script')
       try {
-        // algumas implementações podem retornar 204 ou corpo vazio
         const text = await res.text()
         if (!text) return { ok: true }
         const json = JSON.parse(text)
-        // publica snapshot imediatamente para hidratação instantânea
         ssSet('snapshot:settings:script', json)
         return json
       } catch {
@@ -470,7 +476,6 @@ export function ApiProvider({ children }) {
         return fallback
       }
     },
-    // SSE: stream de mudanças em contatos para auto-refresh imediato, com fallback de polling
     openContactsStream({ onChange } = {}) {
       const url = `${apiBase.replace(/\/api$/, '')}/api/events/contacts`
       let es = null
@@ -492,10 +497,9 @@ export function ApiProvider({ children }) {
               lastStats = s
               onChange && onChange({ via: 'poll' })
             }
-          } catch { /* ignora erros intermitentes */ }
+          } catch {}
         }
         const id = setInterval(tick, POLL_MS)
-        // primeira checagem imediata
         tick()
         stopPolling = () => { clearInterval(id); stopPolling = null }
         return stopPolling
@@ -509,12 +513,10 @@ export function ApiProvider({ children }) {
         })
         es.addEventListener('ping', () => { lastPing = Date.now() })
         es.onerror = () => {
-          // Em erro, troca para polling e fecha SSE (o navegador tentará reconectar, mas muitos hosts bufferizam)
           try { es && es.close() } catch {}
           es = null
           startPolling()
         }
-        // watchdog: se não receber ping por muito tempo, assume buffering e cai para polling
         watchdog = setInterval(() => {
           if (Date.now() - lastPing > WATCHDOG_MS) {
             try { es && es.close() } catch {}
@@ -526,7 +528,6 @@ export function ApiProvider({ children }) {
         return es
       }
 
-      // inicia SSE; fallback é automático
       startSse()
 
       return () => {
@@ -551,6 +552,26 @@ export function ApiProvider({ children }) {
       const data = await res.json()
       clearContactsCache()
       return data
+    },
+    async getContactVisibility(id) {
+      try {
+        const res = await fetchJson(`${apiBase}/contacts/${id}/visibility`)
+        if (res.status === 404) return { user_ids: [] }
+        if (!res.ok) throw new Error('Erro ao carregar visibilidade')
+        const data = await res.json()
+        return { user_ids: Array.isArray(data?.user_ids) ? data.user_ids : [] }
+      } catch {
+        return { user_ids: [] }
+      }
+    },
+    async updateContactVisibility(id, userIds) {
+      const res = await fetchJson(`${apiBase}/contacts/${id}/visibility`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_ids: Array.isArray(userIds) ? userIds : [] })
+      })
+      if (!res.ok) throw new Error('Erro ao atualizar visibilidade')
+      try { return await res.json() } catch { return { ok: true } }
     },
     async deleteContact(id) {
       const res = await fetchJson(`${apiBase}/contacts/${id}`, {
