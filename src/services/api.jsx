@@ -281,23 +281,52 @@ export function ApiProvider({ children }) {
       }
     },
     async listUsers(opts = {}) {
-      const page = Number(opts.page || 1)
+      const firstPage = Number(opts.page || 1)
       const perPage = Number(opts.perPage || 100)
-      const role = opts.role ? String(opts.role) : ''
-      const url = new URL(`${apiBase}/users`)
-      url.searchParams.set('page', String(page))
-      url.searchParams.set('per_page', String(perPage))
-      if (role) url.searchParams.set('role', role)
-      const res = await fetchJson(url.toString(), { method: 'GET' })
-      if (!res.ok) throw new Error('Erro ao listar usuários')
-      const raw = await res.json()
-      const arr = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw) ? raw : [])
-      return arr.map(u => {
+      const roleFilter = opts.role ? String(opts.role) : ''
+      const fetchAll = opts.all !== false // por padrão, busca todas as páginas
+
+      const normalizeUser = (u) => {
         const role = (typeof u.role !== 'undefined') ? u.role : (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal'))
         const active = (typeof u.active !== 'undefined') ? !!u.active : (typeof u.is_active !== 'undefined') ? !!u.is_active : (u.status ? String(u.status).toLowerCase() !== 'inactive' : true)
         const isCommercial = (typeof u.is_commercial !== 'undefined') ? !!u.is_commercial : role === 'comercial'
         return { ...u, role, is_admin: !!u.is_admin, is_commercial: isCommercial, active, is_active: active, status: active ? (u.status || 'active') : 'inactive' }
-      })
+      }
+
+      const buildUrl = (pageNum) => {
+        const url = new URL(`${apiBase}/users`)
+        url.searchParams.set('page', String(pageNum))
+        url.searchParams.set('per_page', String(perPage))
+        // Cobertura para convenções diferentes no backend
+        url.searchParams.set('perPage', String(perPage))
+        url.searchParams.set('limit', String(perPage))
+        if (roleFilter) url.searchParams.set('role', roleFilter)
+        return url.toString()
+      }
+
+      const res = await fetchJson(buildUrl(firstPage), { method: 'GET' })
+      if (!res.ok) throw new Error('Erro ao listar usuários')
+      const raw = await res.json()
+      const arr = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw) ? raw : [])
+      const meta = raw?.meta || {}
+      let users = arr.map(normalizeUser)
+
+      const lastPage = Number(meta?.last_page || meta?.lastPage || 1)
+      if (fetchAll && lastPage > firstPage) {
+        const pages = []
+        for (let p = firstPage + 1; p <= lastPage; p++) pages.push(p)
+        const results = await Promise.allSettled(pages.map(p => fetchJson(buildUrl(p), { method: 'GET' })))
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            try {
+              const j = await r.value.json()
+              const a = Array.isArray(j?.data) ? j.data : (Array.isArray(j) ? j : [])
+              users = users.concat(a.map(normalizeUser))
+            } catch {}
+          }
+        }
+      }
+      return users
     },
     async updateUserActive(id, active) {
       const res = await fetchJson(`${apiBase}/users/${id}/active`, {
