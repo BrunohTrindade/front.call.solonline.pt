@@ -925,7 +925,7 @@ export default function Movimentacao(){
                         }
                       }}
                       sx={{ width: { xs: '100%', sm: 'auto' } }}
-                    >Visibilidade…</Button>
+                    >Compartilhar…</Button>
                   )}
                   {status && <span className="muted">{status}</span>}
                 </Box>
@@ -937,10 +937,10 @@ export default function Movimentacao(){
         </Box>
         {/* Diálogo de visibilidade por registro (Admin) */}
         <Dialog open={visibOpen} onClose={()=> !savingVisibility && setVisibOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle>Visibilidade do registro</DialogTitle>
+          <DialogTitle>Compartilhar registro</DialogTitle>
           <DialogContent dividers>
             <Typography variant="body2" sx={{ mb: 1.5 }}>
-              Selecione os usuários que poderão visualizar este registro (além de admins).
+              Selecione os usuários (comerciais) com quem deseja compartilhar este registro.
             </Typography>
             <Box sx={{ display:'grid', gap: .5 }}>
               {allUsers.length === 0 && (
