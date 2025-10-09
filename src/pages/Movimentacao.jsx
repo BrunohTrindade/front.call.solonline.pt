@@ -904,7 +904,7 @@ export default function Movimentacao(){
                       sx={{ width: { xs: '100%', sm: 'auto' } }}
                     >Excluir</Button>
                   )}
-                  {user?.is_admin && (
+                  {(user?.is_admin || user?.role==='normal') && (
                     <Button
                       variant="outlined"
                       onClick={async ()=>{
@@ -912,7 +912,7 @@ export default function Movimentacao(){
                         // carrega usuários e visibilidade atual
                         try {
                           const [users, vis] = await Promise.all([
-                            listUsers(),
+                            user?.is_admin ? listUsers() : listUsers({ role: 'comercial' }),
                             getContactVisibility(selected.id)
                           ])
                           setAllUsers(users)

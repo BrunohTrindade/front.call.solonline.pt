@@ -280,8 +280,15 @@ export function ApiProvider({ children }) {
         throw err
       }
     },
-    async listUsers() {
-      const res = await fetchJson(`${apiBase}/users`, { method: 'GET' })
+    async listUsers(opts = {}) {
+      const page = Number(opts.page || 1)
+      const perPage = Number(opts.perPage || 100)
+      const role = opts.role ? String(opts.role) : ''
+      const url = new URL(`${apiBase}/users`)
+      url.searchParams.set('page', String(page))
+      url.searchParams.set('per_page', String(perPage))
+      if (role) url.searchParams.set('role', role)
+      const res = await fetchJson(url.toString(), { method: 'GET' })
       if (!res.ok) throw new Error('Erro ao listar usuários')
       const raw = await res.json()
       const arr = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw) ? raw : [])

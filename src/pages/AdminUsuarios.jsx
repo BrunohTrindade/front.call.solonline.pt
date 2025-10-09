@@ -277,6 +277,17 @@ export default function AdminUsuarios(){
               <ListItemText primary={`Tema: ${mode==='dark' ? 'Escuro' : 'Claro'}`} />
               <Switch edge="end" checked={mode==='dark'} onChange={toggle} />
             </ListItemButton>
+            {user?.is_admin && (
+              <ListItemButton onClick={async ()=>{
+                setUsersOpen(true)
+                setUsersMsg('')
+                setLoadingUsers(true)
+                try { const list = await listUsers(); setUsers(list) } catch(e){ setUsersMsg(e?.message||'Erro ao carregar usuários') } finally { setLoadingUsers(false) }
+              }}>
+                <ListItemIcon><PeopleIcon/></ListItemIcon>
+                <ListItemText primary="Gerenciar Usuários" />
+              </ListItemButton>
+            )}
             <ListItemButton component={RouterLink} to="/movimentacao" onClick={()=> setMobileMenuOpen(false)}>
               <ListItemIcon><ArrowBackIcon/></ListItemIcon>
               <ListItemText primary="Movimentação" />
