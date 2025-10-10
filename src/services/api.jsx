@@ -33,6 +33,15 @@ export function ApiProvider({ children }) {
   const inflight = new Map()
 
   const SNAP_TTL_MS = 60_000
+  // Escopo de cache por usuário/role para evitar reaproveitar dados de outra conta
+  const cacheScope = useMemo(() => {
+    try {
+      const uid = user?.id != null ? String(user.id) : 'anon'
+      const role = user?.role || (user?.is_admin ? 'admin' : (user?.is_commercial ? 'comercial' : 'normal')) || 'guest'
+      return `u:${uid}:${role}`
+    } catch { return 'u:anon:guest' }
+  }, [user?.id, user?.role, user?.is_admin, user?.is_commercial])
+  const scopeKey = (key) => `${cacheScope}:${key}`
   const ssGet = (key) => {
     try {
       const raw = sessionStorage.getItem(key)
@@ -50,11 +59,26 @@ export function ApiProvider({ children }) {
   const clearContactsCache = () => {
     try {
       for (const key of Array.from(inMemoryCache.keys())) {
-        if (String(key).startsWith('contacts:')) inMemoryCache.delete(key)
+        const k = String(key)
+        if (k.startsWith('contacts:') || k.includes(':contacts:')) inMemoryCache.delete(key)
       }
       for (const key of Array.from(etagCache.keys())) {
-        if (String(key).startsWith('contacts:')) etagCache.delete(key)
+        const k = String(key)
+        if (k.startsWith('contacts:') || k.includes(':contacts:')) etagCache.delete(key)
       }
+      for (const key of Array.from(inflight.keys())) {
+        const k = String(key)
+        if (k.startsWith('contacts:') || k.includes(':contacts:')) inflight.delete(key)
+      }
+      // Limpa snapshots em sessionStorage de contatos (legados e escopados)
+      const toDel = []
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i)
+        if (!k) continue
+        if (k.startsWith('snapshot:contacts:')) toDel.push(k)
+        if (k.startsWith('snapshot:') && k.includes(':contacts:')) toDel.push(k)
+      }
+      for (const k of toDel) { try { sessionStorage.removeItem(k) } catch {} }
     } catch {}
   }
 
@@ -98,11 +122,11 @@ export function ApiProvider({ children }) {
     getContactsSnapshot(page=1, perPage=50, opts={}){
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
-      const cacheKey = `contacts:${page}:${perPage}:${q}:${status}`
+      const cacheKey = scopeKey(`contacts:${page}:${perPage}:${q}:${status}`)
       return ssGet(`snapshot:${cacheKey}`)
     },
     getContactsStatsSnapshot(){
-      return ssGet('snapshot:contacts:stats')
+      return ssGet(`snapshot:${scopeKey('contacts:stats')}`)
     },
     async login(email, password) {
       const res = await fetch(`${apiBase}/login`, {
@@ -122,12 +146,15 @@ export function ApiProvider({ children }) {
       setToken(data.token)
       const u = data.user || {}
       const role = (u.role || (u.is_admin ? 'admin' : (u.is_commercial ? 'comercial' : 'normal')))
+      // Ao logar, limpa caches/snapshots de contatos para evitar dados da sessão anterior
+      try { clearContactsCache() } catch {}
       setUser({ ...u, role, is_admin: !!u.is_admin, is_commercial: role === 'comercial' })
       return data
     },
     async logout() {
       if (!token) return
       await fetchJson(`${apiBase}/logout`, { method: 'POST', headers: {}, body: undefined, signal: undefined, keepalive: true })
+      try { clearContactsCache() } catch {}
       setToken(''); setUser(null)
     },
     async me() {
@@ -346,7 +373,7 @@ export function ApiProvider({ children }) {
       const q = (opts?.q || '').trim()
       const status = opts?.status || ''
       const bust = !!opts?.bust
-      const cacheKey = `contacts:${page}:${perPage}:${q}:${status}`
+      const cacheKey = scopeKey(`contacts:${page}:${perPage}:${q}:${status}`)
       const now = Date.now()
       if (!bust && inMemoryCache.has(cacheKey)) {
         const { ts, data } = inMemoryCache.get(cacheKey)
@@ -440,7 +467,7 @@ export function ApiProvider({ children }) {
     },
     async listContactsStats(opts={}) {
       const bust = !!opts?.bust
-      const key = 'contacts:stats'
+      const key = scopeKey('contacts:stats')
       const controller = new AbortController()
       const timeout = setTimeout(()=> controller.abort('timeout'), 8000)
       const headers = { }
@@ -454,7 +481,7 @@ export function ApiProvider({ children }) {
       if (res.status === 304 && inMemoryCache.has(key)) {
         const cached = inMemoryCache.get(key).data
         inMemoryCache.set(key, { ts: Date.now(), data: cached })
-        ssSet('snapshot:contacts:stats', cached)
+        ssSet(`snapshot:${key}`, cached)
         return cached
       }
       if (res.status === 304 && !inMemoryCache.has(key)) {
@@ -465,7 +492,7 @@ export function ApiProvider({ children }) {
       const data = await res.json()
       if (newEtag) etagCache.set(key, newEtag)
       inMemoryCache.set(key, { ts: Date.now(), data })
-      ssSet('snapshot:contacts:stats', data)
+      ssSet(`snapshot:${key}`, data)
       return data
     },
     async getScript() {
@@ -607,6 +634,8 @@ export function ApiProvider({ children }) {
         body: JSON.stringify({ user_ids: Array.isArray(userIds) ? userIds : [] })
       })
       if (!res.ok) throw new Error('Erro ao atualizar visibilidade')
+      // Invalida caches locais após atualizar visibilidade
+      try { clearContactsCache() } catch {}
       try { return await res.json() } catch { return { ok: true } }
     },
     async deleteContact(id) {
@@ -626,7 +655,7 @@ export function ApiProvider({ children }) {
     user,
     setToken,
     setUser
-  }), [token, user])
+  }), [token, user, cacheScope])
 
   return (
     <ApiContext.Provider value={api}>

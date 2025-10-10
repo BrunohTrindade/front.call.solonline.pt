@@ -213,7 +213,7 @@ export default function Movimentacao(){
   // de lista e detalhes, desfaz a seleção. Também limpa com tecla Escape.
   useEffect(()=>{
     function handleDocMouseDown(e){
-      if(confirmDeleteOpen) return // não desfaz seleção enquanto o diálogo está aberto
+      if(confirmDeleteOpen || visibOpen) return // não desfaz seleção enquanto qualquer diálogo está aberto
       if(!selected) return
       const insideList = listCardRef.current?.contains(e.target)
       const insideDetails = detailsCardRef.current?.contains(e.target)
@@ -225,7 +225,7 @@ export default function Movimentacao(){
       }
     }
     function handleKeyDown(e){
-      if(confirmDeleteOpen) return // ignora ESC enquanto o diálogo está aberto
+      if(confirmDeleteOpen || visibOpen) return // ignora ESC enquanto qualquer diálogo está aberto
       if(!selected) return
       if(e.key === 'Escape'){
         // Mesmo comportamento no ESC: desfaz seleção mas mantém rascunho salvo em `unsaved`.
@@ -240,7 +240,7 @@ export default function Movimentacao(){
       document.removeEventListener('mousedown', handleDocMouseDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [selected, confirmDeleteOpen])
+  }, [selected, confirmDeleteOpen, visibOpen])
 
   // Ajuste visual: se o registro selecionado tiver alterações não salvas (dirty),
   // tratamos como "pendente" na UI até gravar.
@@ -941,8 +941,11 @@ export default function Movimentacao(){
         <Dialog open={visibOpen} onClose={()=> !savingVisibility && setVisibOpen(false)} maxWidth="sm" fullWidth>
           <DialogTitle>Compartilhar registro</DialogTitle>
           <DialogContent dividers>
-            <Typography variant="body2" sx={{ mb: 1.5 }}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
               Selecione os usuários (comerciais) com quem deseja compartilhar este registro.
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display:'block', mb: 1.5 }}>
+              Observação: o usuário verá o registro ao atualizar a tela (ou dentro de alguns segundos automaticamente).
             </Typography>
             <Box sx={{ display:'grid', gap: .5 }}>
               {allUsers.length === 0 && (
@@ -975,6 +978,8 @@ export default function Movimentacao(){
               try{
                 await updateContactVisibility(selected.id, visibleUserIds)
                 setVisibOpen(false)
+                // Recarrega lista/contadores para refletir o compartilhamento imediatamente
+                await load(true)
               }catch(e){
                 // mantém aberto; poderia exibir snackbar
               } finally {
