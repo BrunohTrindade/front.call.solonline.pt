@@ -876,59 +876,61 @@ export default function Movimentacao(){
                   )}
                 </div>
 
-                <Box className="flex items-center gap-3" sx={{
-                  justifyContent: { xs: 'stretch', sm: 'flex-end' },
-                  flexWrap: 'wrap',
-                  gap: 1.25
-                }}>
-                  <Button
-                    variant="outlined"
-                    onClick={()=>{ setSelected(null); setObservacao(''); setDirty(false) }}
-                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                  >Cancelar</Button>
-                  <Button
-                    variant="contained"
-                    onClick={salvar}
-                    disabled={isCommercial || (!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === '') || (!user?.is_admin && !!selected?.processed_at)}
-                    sx={{ width: { xs: '100%', sm: 'auto' } }}
-                  >Gravar Registro</Button>
-                  {user?.is_admin && (
+                {!isCommercial && (
+                  <Box className="flex items-center gap-3" sx={{
+                    justifyContent: { xs: 'stretch', sm: 'flex-end' },
+                    flexWrap: 'wrap',
+                    gap: 1.25
+                  }}>
                     <Button
                       variant="outlined"
-                      color="error"
-                      onClick={()=> {
-                        setDeleteTargetId(selected?.id ?? null)
-                        setDeleteTargetNumero(selected ? (selected.numero ?? selected.id) : null)
-                        setConfirmDeleteOpen(true)
-                      }}
+                      onClick={()=>{ setSelected(null); setObservacao(''); setDirty(false) }}
                       sx={{ width: { xs: '100%', sm: 'auto' } }}
-                    >Excluir</Button>
-                  )}
-                  {(user?.is_admin || user?.role==='normal') && (
+                    >Cancelar</Button>
                     <Button
-                      variant="outlined"
-                      onClick={async ()=>{
-                        if (!selected?.id) return
-                        // carrega usuários e visibilidade atual
-                        try {
-                          const [users, vis] = await Promise.all([
-                            user?.is_admin ? listUsers() : listUsers({ role: 'comercial' }),
-                            getContactVisibility(selected.id)
-                          ])
-                          setAllUsers(users)
-                          setVisibleUserIds(Array.isArray(vis?.user_ids) ? vis.user_ids : [])
-                          setVisibOpen(true)
-                        } catch (e) {
-                          setAllUsers([])
-                          setVisibleUserIds([])
-                          setVisibOpen(true)
-                        }
-                      }}
+                      variant="contained"
+                      onClick={salvar}
+                      disabled={(!dirty || (observacao.trim() === (selected?.observacao||'').trim()) || observacao.trim() === '') || (!user?.is_admin && !!selected?.processed_at)}
                       sx={{ width: { xs: '100%', sm: 'auto' } }}
-                    >Compartilhar…</Button>
-                  )}
-                  {status && <span className="muted">{status}</span>}
-                </Box>
+                    >Gravar Registro</Button>
+                    {user?.is_admin && (
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        onClick={()=> {
+                          setDeleteTargetId(selected?.id ?? null)
+                          setDeleteTargetNumero(selected ? (selected.numero ?? selected.id) : null)
+                          setConfirmDeleteOpen(true)
+                        }}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                      >Excluir</Button>
+                    )}
+                    {(user?.is_admin || user?.role==='normal') && (
+                      <Button
+                        variant="outlined"
+                        onClick={async ()=>{
+                          if (!selected?.id) return
+                          // carrega usuários e visibilidade atual
+                          try {
+                            const [users, vis] = await Promise.all([
+                              user?.is_admin ? listUsers() : listUsers({ role: 'comercial' }),
+                              getContactVisibility(selected.id)
+                            ])
+                            setAllUsers(users)
+                            setVisibleUserIds(Array.isArray(vis?.user_ids) ? vis.user_ids : [])
+                            setVisibOpen(true)
+                          } catch (e) {
+                            setAllUsers([])
+                            setVisibleUserIds([])
+                            setVisibOpen(true)
+                          }
+                        }}
+                        sx={{ width: { xs: '100%', sm: 'auto' } }}
+                      >Compartilhar…</Button>
+                    )}
+                    {status && <span className="muted">{status}</span>}
+                  </Box>
+                )}
               </div>
             ) : (
               <div className="muted">Selecione um registro à esquerda para ver os detalhes.</div>
